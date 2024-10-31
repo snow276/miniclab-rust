@@ -3,4 +3,8 @@ name = "sysy_compiler"
 version = "0.1.0"
 edition = "2021"
 
+[build-dependencies]
+lalrpop = "0.22.0"
+
 [dependencies]
+lalrpop-util = { version = "0.22.0", features = ["lexer"] }

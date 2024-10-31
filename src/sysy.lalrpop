@@ -1,3 +1,5 @@
+use sysy_compiler::ast::*;
+
 grammar;
 
 match {
@@ -9,21 +11,21 @@ match {
   _
 }
 
-pub CompUnit: String = <func_def: FuncDef> => func_def;
+pub CompUnit: CompUnit = <func_def: FuncDef> => CompUnit{ <> };
 
-FuncDef: String = {
-  <func_type: FuncType> <id: Ident> "(" ")" <block: Block> => {
-    format!("{} {}() {}", func_type, id, block)
+FuncDef: FuncDef = {
+  <func_type: FuncType> <ident: Ident> "(" ")" <block: Block> => {
+    FuncDef { <> }
   }
 }
 
-FuncType: String = "int" => "int".to_string();
+FuncType: FuncType = "int" => FuncType::Int;
 
-Block: String = "{" <stmt: Stmt> "}" => format!("{{ {} }}", stmt);
+Block: Block = "{" <stmt: Stmt> "}" => Block{ <> };
 
-Stmt: String = "return" <num: Number> ";" => format!("return {};", num);
+Stmt: Stmt = "return" <number: Number> ";" => Stmt { <> };
 
-Number: String = <num: IntConst> => num.to_string();
+Number: i32 = <num: IntConst> => <>;
 
 Ident: String = r"[_a-zA-Z][_a-zA-Z0-9]*" => <>.to_string();
 

@@ -1,6 +1,7 @@
 [package]
 name = "sysy_compiler"
 version = "0.1.0"
+authors = ["snow276 <leo.cao@stu.pku.edu.cn>"]
 edition = "2021"
 
 [build-dependencies]

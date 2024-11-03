@@ -1,5 +1,7 @@
 use koopa::back::KoopaGenerator;
+use koopa::ir::Program;
 use lalrpop_util::lalrpop_mod;
+use sysy_compiler::codegen;
 use sysy_compiler::irgen;
 use std::env::args;
 use std::fs::read_to_string;
@@ -33,15 +35,27 @@ fn try_main() -> Result<(), Error> {
 
   let koopa_program = irgen::generate_koopa_program(&comp_unit);
 
-  let mut koopa_generator = KoopaGenerator::new(Vec::new());
-  koopa_generator.generate_on(&koopa_program).unwrap();
-  let koopa_ir_text = std::str::from_utf8(&koopa_generator.writer()).unwrap().to_string();
-  println!("{}", koopa_ir_text);
-
-  let mut file = File::create(output).map_err(Error::Io)?;
-  file.write(koopa_ir_text.as_bytes()).map_err(Error::Io)?; // 将字符串转换为字节并写入文件
+  match mode {
+    Mode::Koopa => print_koopa_ir(&koopa_program, &output),
+    Mode::Riscv => print_riscv_asm(&koopa_program, &output),
+  }
 
   Ok(())
+}
+
+fn print_koopa_ir(program: &Program, output_path: &String) {
+  let mut koopa_generator = KoopaGenerator::new(Vec::new());
+  koopa_generator.generate_on(program).unwrap();
+  let koopa_ir_text = std::str::from_utf8(&koopa_generator.writer()).unwrap().to_string();
+
+  let mut file = File::create(output_path).unwrap();
+  file.write(koopa_ir_text.as_bytes()).unwrap();  
+}
+
+fn print_riscv_asm(program: &Program, output_path: &String) {
+  let riscv_asm_text = codegen::generate_riscv(program);
+  let mut file = File::create(output_path).unwrap();
+  file.write(riscv_asm_text.as_bytes()).unwrap();
 }
 
 enum Error {

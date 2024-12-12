@@ -91,7 +91,7 @@ impl fmt::Display for Error {
     match self {
       Self::InvalidArgs => write!(
         f,
-        r#"Usage: kira MODE INPUT -o OUTPUT
+        r#"Usage: sysy_compiler MODE INPUT -o OUTPUT
 
 Options:
   MODE:   can be `-koopa`, `-riscv` or `-perf`

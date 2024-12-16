@@ -1,29 +1,33 @@
 use super::CodegenError;
+use super::env::CodegenEnv;
+use koopa::ir::entities::ValueData;
+use koopa::ir::values::*;
 use koopa::ir::{FunctionData, Program, ValueKind};
 use std::result::Result;
 
-pub trait GenerateAsm {
+pub trait GenerateAsm<'p> {
     type Out;
 
-    fn generate_riscv(&self, riscv_text: &mut String) -> Result<Self::Out, CodegenError>;
+    fn generate_riscv(&self, riscv_text: &mut String, env: &mut CodegenEnv<'p>) -> Result<Self::Out, CodegenError>;
 }
 
-impl GenerateAsm for Program {
+impl<'p> GenerateAsm<'p> for Program {
     type Out = ();
     
-    fn generate_riscv(&self, riscv_text: &mut String) -> Result<Self::Out, CodegenError> {
+    fn generate_riscv(&self, riscv_text: &mut String, env: &mut CodegenEnv<'p>) -> Result<Self::Out, CodegenError> {
         riscv_text.push_str("  .text\n");
         for &func in self.func_layout() {
-            self.func(func).generate_riscv(riscv_text)?;
+            env.set_func(func);
+            self.func(func).generate_riscv(riscv_text, env)?;
         }
         Ok(())
     }
 }
 
-impl GenerateAsm for FunctionData {
+impl<'p> GenerateAsm<'p> for FunctionData {
     type Out = ();
 
-    fn generate_riscv(&self, riscv_text: &mut String) -> Result<Self::Out, CodegenError> {
+    fn generate_riscv(&self, riscv_text: &mut String, env: &mut CodegenEnv<'p>) -> Result<Self::Out, CodegenError> {
         let func_name = &self.name()[1..];
         riscv_text.push_str(&format!("  .globl {}\n", func_name));
         riscv_text.push_str(&format!("{}:\n", func_name));
@@ -31,44 +35,31 @@ impl GenerateAsm for FunctionData {
         for (&bb, node) in self.layout().bbs() {
             for &inst in node.insts().keys() {
                 let value_data = self.dfg().value(inst);
-                match value_data.kind() {
-                    ValueKind::Return(ret) => {
-                        if let Some(value) = ret.value() {
-                            let ret_val = self.dfg().value(value);
-                            if let ValueKind::Integer(i) = ret_val.kind() {
-                                riscv_text.push_str(&format!("  li a0, {}\n", i.value()));
-                            }
-                        }
-                        else {
-                            return Err(CodegenError::UnknownInstruction);
-                        }
-                        riscv_text.push_str("  ret\n");
-                    }
-                    _ => unreachable!(),
-                }
+                value_data.generate_riscv(riscv_text, env)?;
             }
         }
         Ok(())
     }
 }
 
-// impl GenerateAsm for ValueData {
-//     type Out = ();
+impl<'p> GenerateAsm<'p> for ValueData {
+    type Out = ();
 
-//     fn generate_riscv(&self, riscv_text: &mut String) -> Self::Out {
-//         match self.kind() {
-//             ValueKind::Integer(i) => {
-//                 riscv_text.push_str(&format!("  li {}, {}\n", self.name(), i));
-//             }
-//             ValueKind::Return(ret) => {
-//                 riscv_text.push_str(&format!("  ret {}\n", ret.name()));
-//             }
-//             _ => unreachable!(),
-//         }
-//     }
-// }
+    fn generate_riscv(&self, riscv_text: &mut String, env: &mut CodegenEnv<'p>) -> Result<Self::Out, CodegenError> {
+        match self.kind() {
+            // ValueKind::Integer(i) => {
+            //     riscv_text.push_str(&format!("  li {}, {}\n", self.name(), i));
+            // }
+            ValueKind::Return(ret) => {
+                ret.generate_riscv(riscv_text, env)?;
+            }
+            _ => unreachable!(),
+        }
+        Ok(())
+    }
+}
 
-// impl GenerateAsm for values::Integer {
+// impl GenerateAsm for Integer {
 //     type Out = ();
 
 //     fn generate_riscv(&self, riscv_text: &mut String) -> Self::Out {
@@ -76,14 +67,22 @@ impl GenerateAsm for FunctionData {
 //     }
 // }
 
-// impl GenerateAsm for values::Return {
-//     type Out = ();
+impl<'p> GenerateAsm<'p> for Return {
+    type Out = ();
 
-//     fn generate_riscv(&self, riscv_text: &mut String) -> Self::Out {
-//         if let Some(value) = self.value() {
-//             riscv_text.push_str(&format!("  li a0, {}\n", value.()));
-//         }
-//         riscv_text.push_str(&format!("  li a0, {}\n", self.value()));
-//         riscv_text.push_str("  ret\n");
-//     }
-// }
+    fn generate_riscv(&self, riscv_text: &mut String, env: &mut CodegenEnv<'p>) -> Result<Self::Out, CodegenError> {
+        if let Some(value) = self.value() {
+            let func = env.get_func().unwrap();
+            let func_data = env.get_program().func(*func);
+            let ret_val = func_data.dfg().value(value);
+            if let ValueKind::Integer(i) = ret_val.kind() {
+                riscv_text.push_str(&format!("  li a0, {}\n", i.value()));
+            }
+            else {
+                return Err(CodegenError::UnknownInstruction);
+            }
+        }
+        riscv_text.push_str("  ret\n");
+        Ok(())
+    }
+}

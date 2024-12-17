@@ -17,7 +17,7 @@ impl<'p> GenerateAsm<'p> for Program {
     fn generate_riscv(&self, riscv_text: &mut String, env: &mut CodegenEnv<'p>) -> Result<Self::Out, CodegenError> {
         riscv_text.push_str("  .text\n");
         for &func in self.func_layout() {
-            env.set_func(func);
+            env.set_cur_func(func);
             self.func(func).generate_riscv(riscv_text, env)?;
         }
         Ok(())
@@ -72,9 +72,9 @@ impl<'p> GenerateAsm<'p> for Return {
 
     fn generate_riscv(&self, riscv_text: &mut String, env: &mut CodegenEnv<'p>) -> Result<Self::Out, CodegenError> {
         if let Some(value) = self.value() {
-            let func = env.get_func().unwrap();
-            let func_data = env.get_program().func(*func);
-            let ret_val = func_data.dfg().value(value);
+            let cur_func = env.get_cur_func().unwrap();
+            let cur_func_data = env.get_program().func(*cur_func);
+            let ret_val = cur_func_data.dfg().value(value);
             if let ValueKind::Integer(i) = ret_val.kind() {
                 riscv_text.push_str(&format!("  li a0, {}\n", i.value()));
             }

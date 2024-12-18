@@ -298,8 +298,13 @@ impl<'ast> GenerateKoopa<'ast> for LAndExp {
                 let rhs = eq_exp.generate_koopa(program, env)?;
                 let cur_func = env.get_cur_func().unwrap();
                 let cur_func_data = program.func_mut(*cur_func);
-                let value = cur_func_data.dfg_mut().new_value().binary(BinaryOp::And, lhs, rhs);
+                let zero = cur_func_data.dfg_mut().new_value().integer(0);
+                let lhs_ne_zero = cur_func_data.dfg_mut().new_value().binary(BinaryOp::NotEq, lhs, zero);
+                let rhs_ne_zero = cur_func_data.dfg_mut().new_value().binary(BinaryOp::NotEq, rhs, zero);
+                let value = cur_func_data.dfg_mut().new_value().binary(BinaryOp::And, lhs_ne_zero, rhs_ne_zero);
                 let cur_bb = env.get_cur_bb().unwrap();
+                cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(lhs_ne_zero).unwrap();
+                cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(rhs_ne_zero).unwrap();
                 cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(value).unwrap();
                 Ok(value)
             }
@@ -320,8 +325,13 @@ impl<'ast> GenerateKoopa<'ast> for LOrExp {
                 let rhs = l_and_exp.generate_koopa(program, env)?;
                 let cur_func = env.get_cur_func().unwrap();
                 let cur_func_data = program.func_mut(*cur_func);
-                let value = cur_func_data.dfg_mut().new_value().binary(BinaryOp::Or, lhs, rhs);
+                let zero = cur_func_data.dfg_mut().new_value().integer(0);
+                let lhs_ne_zero = cur_func_data.dfg_mut().new_value().binary(BinaryOp::NotEq, lhs, zero);
+                let rhs_ne_zero = cur_func_data.dfg_mut().new_value().binary(BinaryOp::NotEq, rhs, zero);
+                let value = cur_func_data.dfg_mut().new_value().binary(BinaryOp::Or, lhs_ne_zero, rhs_ne_zero);
                 let cur_bb = env.get_cur_bb().unwrap();
+                cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(lhs_ne_zero).unwrap();
+                cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(rhs_ne_zero).unwrap();
                 cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(value).unwrap();
                 Ok(value)
             }

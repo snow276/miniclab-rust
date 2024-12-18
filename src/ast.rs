@@ -7,13 +7,17 @@
 // Block       ::= "{" Stmt "}";
 // Stmt        ::= "return" Exp ";";
 
-// Exp         ::= AddExp;
+// Exp         ::= LOrExp;
 // PrimaryExp  ::= "(" Exp ")" | Number;
 // Number      ::= INT_CONST;
 // UnaryExp    ::= PrimaryExp | UnaryOp UnaryExp;
 // UnaryOp     ::= "+" | "-" | "!";
 // MulExp      ::= UnaryExp | MulExp ("*" | "/" | "%") UnaryExp;
 // AddExp      ::= MulExp | AddExp ("+" | "-") MulExp;
+// RelExp      ::= AddExp | RelExp ("<" | ">" | "<=" | ">=") AddExp;
+// EqExp       ::= RelExp | EqExp ("==" | "!=") RelExp;
+// LAndExp     ::= EqExp | LAndExp "&&" EqExp;
+// LOrExp      ::= LAndExp | LOrExp "||" LAndExp;
 
 #[derive(Debug)]
 pub struct CompUnit {
@@ -44,7 +48,7 @@ pub struct Stmt {
 
 #[derive(Debug)]
 pub struct Exp {
-    pub add_exp: AddExp,
+    pub l_or_exp: LOrExp,
 }
 
 #[derive(Debug)]
@@ -72,6 +76,34 @@ pub enum AddExp {
     MulExp(MulExp),
     Add(Box<AddExp>, Box<MulExp>),
     Sub(Box<AddExp>, Box<MulExp>),
+}
+
+#[derive(Debug)]
+pub enum RelExp {
+    AddExp(AddExp),
+    Lt(Box<RelExp>, Box<AddExp>),
+    Gt(Box<RelExp>, Box<AddExp>),
+    Le(Box<RelExp>, Box<AddExp>),
+    Ge(Box<RelExp>, Box<AddExp>),
+}
+
+#[derive(Debug)]
+pub enum EqExp {
+    RelExp(RelExp),
+    Eq(Box<EqExp>, Box<RelExp>),
+    Ne(Box<EqExp>, Box<RelExp>),
+}
+
+#[derive(Debug)]
+pub enum LAndExp {
+    EqExp(EqExp),
+    And(Box<LAndExp>, Box<EqExp>),
+}
+
+#[derive(Debug)]
+pub enum LOrExp {
+    LAndExp(LAndExp),
+    Or(Box<LOrExp>, Box<LAndExp>),
 }
 
 #[derive(Debug)]

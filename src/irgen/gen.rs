@@ -74,7 +74,7 @@ impl<'ast> GenerateKoopa<'ast> for Exp {
     type Out = Value;
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
-        Ok(self.add_exp.generate_koopa(program, env)?)
+        Ok(self.l_or_exp.generate_koopa(program, env)?)
     }
 }
 
@@ -193,6 +193,134 @@ impl<'ast> GenerateKoopa<'ast> for AddExp {
                 let cur_func = env.get_cur_func().unwrap();
                 let cur_func_data = program.func_mut(*cur_func);
                 let value = cur_func_data.dfg_mut().new_value().binary(BinaryOp::Sub, lhs, rhs);
+                let cur_bb = env.get_cur_bb().unwrap();
+                cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(value).unwrap();
+                Ok(value)
+            }
+        }
+    }
+}
+
+impl<'ast> GenerateKoopa<'ast> for RelExp {
+    type Out = Value;
+
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
+        match self {
+            Self::AddExp(add_exp) => {
+                Ok(add_exp.generate_koopa(program, env)?)
+            },
+            Self::Lt(add_exp, rel_exp) => {
+                let lhs = add_exp.generate_koopa(program, env)?;
+                let rhs = rel_exp.generate_koopa(program, env)?;
+                let cur_func = env.get_cur_func().unwrap();
+                let cur_func_data = program.func_mut(*cur_func);
+                let value = cur_func_data.dfg_mut().new_value().binary(BinaryOp::Lt, lhs, rhs);
+                let cur_bb = env.get_cur_bb().unwrap();
+                cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(value).unwrap();
+                Ok(value)
+            },
+            Self::Gt(add_exp, rel_exp) => {
+                let lhs = add_exp.generate_koopa(program, env)?;
+                let rhs = rel_exp.generate_koopa(program, env)?;
+                let cur_func = env.get_cur_func().unwrap();
+                let cur_func_data = program.func_mut(*cur_func);
+                let value = cur_func_data.dfg_mut().new_value().binary(BinaryOp::Gt, lhs, rhs);
+                let cur_bb = env.get_cur_bb().unwrap();
+                cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(value).unwrap();
+                Ok(value)
+            },
+            Self::Le(add_exp, rel_exp) => {
+                let lhs = add_exp.generate_koopa(program, env)?;
+                let rhs = rel_exp.generate_koopa(program, env)?;
+                let cur_func = env.get_cur_func().unwrap();
+                let cur_func_data = program.func_mut(*cur_func);
+                let value = cur_func_data.dfg_mut().new_value().binary(BinaryOp::Le, lhs, rhs);
+                let cur_bb = env.get_cur_bb().unwrap();
+                cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(value).unwrap();
+                Ok(value)
+            }
+            Self::Ge(add_exp, rel_exp) => {
+                let lhs = add_exp.generate_koopa(program, env)?;
+                let rhs = rel_exp.generate_koopa(program, env)?;
+                let cur_func = env.get_cur_func().unwrap();
+                let cur_func_data = program.func_mut(*cur_func);
+                let value = cur_func_data.dfg_mut().new_value().binary(BinaryOp::Ge, lhs, rhs);
+                let cur_bb = env.get_cur_bb().unwrap();
+                cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(value).unwrap();
+                Ok(value)
+            }
+        }  
+    }
+}
+
+impl<'ast> GenerateKoopa<'ast> for EqExp {
+    type Out = Value;
+
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
+        match self {
+            Self::RelExp(rel_exp) => {
+                Ok(rel_exp.generate_koopa(program, env)?)
+            },
+            Self::Eq(eq_exp, rel_exp) => {
+                let lhs = eq_exp.generate_koopa(program, env)?;
+                let rhs = rel_exp.generate_koopa(program, env)?;
+                let cur_func = env.get_cur_func().unwrap();
+                let cur_func_data = program.func_mut(*cur_func);
+                let value = cur_func_data.dfg_mut().new_value().binary(BinaryOp::Eq, lhs, rhs);
+                let cur_bb = env.get_cur_bb().unwrap();
+                cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(value).unwrap();
+                Ok(value)
+            },
+            Self::Ne(eq_exp, rel_exp) => {
+                let lhs = eq_exp.generate_koopa(program, env)?;
+                let rhs = rel_exp.generate_koopa(program, env)?;
+                let cur_func = env.get_cur_func().unwrap();
+                let cur_func_data = program.func_mut(*cur_func);
+                let value = cur_func_data.dfg_mut().new_value().binary(BinaryOp::NotEq, lhs, rhs);
+                let cur_bb = env.get_cur_bb().unwrap();
+                cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(value).unwrap();
+                Ok(value)
+            }
+        }
+    }
+}
+
+impl<'ast> GenerateKoopa<'ast> for LAndExp {
+    type Out = Value;
+
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
+        match self {
+            Self::EqExp(eq_exp) => {
+                Ok(eq_exp.generate_koopa(program, env)?)
+            },
+            Self::And(l_and_exp, eq_exp) => {
+                let lhs = l_and_exp.generate_koopa(program, env)?;
+                let rhs = eq_exp.generate_koopa(program, env)?;
+                let cur_func = env.get_cur_func().unwrap();
+                let cur_func_data = program.func_mut(*cur_func);
+                let value = cur_func_data.dfg_mut().new_value().binary(BinaryOp::And, lhs, rhs);
+                let cur_bb = env.get_cur_bb().unwrap();
+                cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(value).unwrap();
+                Ok(value)
+            }
+        }
+    }
+}
+
+impl<'ast> GenerateKoopa<'ast> for LOrExp {
+    type Out = Value;
+
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
+        match self {
+            Self::LAndExp(l_and_exp) => {
+                Ok(l_and_exp.generate_koopa(program, env)?)
+            }
+            Self::Or(l_or_exp, l_and_exp) => {
+                let lhs = l_or_exp.generate_koopa(program, env)?;
+                let rhs = l_and_exp.generate_koopa(program, env)?;
+                let cur_func = env.get_cur_func().unwrap();
+                let cur_func_data = program.func_mut(*cur_func);
+                let value = cur_func_data.dfg_mut().new_value().binary(BinaryOp::Or, lhs, rhs);
                 let cur_bb = env.get_cur_bb().unwrap();
                 cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(value).unwrap();
                 Ok(value)

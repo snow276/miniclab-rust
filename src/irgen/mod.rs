@@ -1,6 +1,8 @@
+mod env;
 mod gen;
 
 use crate::ast::CompUnit;
+use env::IrgenEnv;
 use gen::GenerateKoopa;
 use koopa::ir::Program;
 use std::fmt;
@@ -9,7 +11,7 @@ use std::result::Result;
 /// Generates Koopa IR program for the given compile unit (ASTs).
 pub fn generate_koopa_program(comp_unit: &CompUnit) -> Result<Program, IrgenError> {
     let mut program = Program::new();
-    comp_unit.generate_koopa(&mut program)?;
+    comp_unit.generate_koopa(&mut program, &mut IrgenEnv::new())?;
     Ok(program)
 }
 

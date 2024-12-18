@@ -1,12 +1,17 @@
 // EBNF:
-// CompUnit  ::= FuncDef;
+// CompUnit    ::= FuncDef;
 
-// FuncDef   ::= FuncType IDENT "(" ")" Block;
-// FuncType  ::= "int";
+// FuncDef     ::= FuncType IDENT "(" ")" Block;
+// FuncType    ::= "int";
 
-// Block     ::= "{" Stmt "}";
-// Stmt      ::= "return" Number ";";
-// Number    ::= INT_CONST;
+// Block       ::= "{" Stmt "}";
+// Stmt        ::= "return" Exp ";";
+
+// Exp         ::= UnaryExp;
+// PrimaryExp  ::= "(" Exp ")" | Number;
+// Number      ::= INT_CONST;
+// UnaryExp    ::= PrimaryExp | UnaryOp UnaryExp;
+// UnaryOp     ::= "+" | "-" | "!";
 
 #[derive(Debug)]
 pub struct CompUnit {
@@ -32,5 +37,29 @@ pub struct Block {
 
 #[derive(Debug)]
 pub struct Stmt {
-    pub number: i32,
+    pub exp: Exp,
+}
+
+#[derive(Debug)]
+pub struct Exp {
+    pub unary_exp: UnaryExp,
+}
+
+#[derive(Debug)]
+pub enum UnaryExp {
+    PrimaryExp(PrimaryExp),
+    UnaryExp(UnaryOp, Box<UnaryExp>),
+}
+
+#[derive(Debug)]
+pub enum PrimaryExp {
+    Exp(Box<Exp>),
+    Number(i32),
+}
+
+#[derive(Debug)]
+pub enum UnaryOp {
+    Plus,
+    Minus,
+    Not,
 }

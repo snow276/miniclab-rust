@@ -37,6 +37,8 @@ fn try_main() -> Result<(), Error> {
     .parse(&input)
     .map_err(|_| Error::Parse)?;
 
+  // print!("{:?}", comp_unit);
+
   // Generate Koopa IR
   let koopa_program = irgen::generate_koopa_program(&comp_unit)
     .map_err(Error::GenerateIr)?;

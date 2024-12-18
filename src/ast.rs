@@ -7,11 +7,13 @@
 // Block       ::= "{" Stmt "}";
 // Stmt        ::= "return" Exp ";";
 
-// Exp         ::= UnaryExp;
+// Exp         ::= AddExp;
 // PrimaryExp  ::= "(" Exp ")" | Number;
 // Number      ::= INT_CONST;
 // UnaryExp    ::= PrimaryExp | UnaryOp UnaryExp;
 // UnaryOp     ::= "+" | "-" | "!";
+// MulExp      ::= UnaryExp | MulExp ("*" | "/" | "%") UnaryExp;
+// AddExp      ::= MulExp | AddExp ("+" | "-") MulExp;
 
 #[derive(Debug)]
 pub struct CompUnit {
@@ -42,7 +44,7 @@ pub struct Stmt {
 
 #[derive(Debug)]
 pub struct Exp {
-    pub unary_exp: UnaryExp,
+    pub add_exp: AddExp,
 }
 
 #[derive(Debug)]
@@ -55,6 +57,21 @@ pub enum UnaryExp {
 pub enum PrimaryExp {
     Exp(Box<Exp>),
     Number(i32),
+}
+
+#[derive(Debug)]
+pub enum MulExp {
+    UnaryExp(UnaryExp),
+    Mul(Box<MulExp>, Box<UnaryExp>),
+    Div(Box<MulExp>, Box<UnaryExp>),
+    Mod(Box<MulExp>, Box<UnaryExp>),
+}
+
+#[derive(Debug)]
+pub enum AddExp {
+    MulExp(MulExp),
+    Add(Box<AddExp>, Box<MulExp>),
+    Sub(Box<AddExp>, Box<MulExp>),
 }
 
 #[derive(Debug)]

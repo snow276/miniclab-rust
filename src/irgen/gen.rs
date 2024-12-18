@@ -74,7 +74,7 @@ impl<'ast> GenerateKoopa<'ast> for Exp {
     type Out = Value;
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
-        Ok(self.unary_exp.generate_koopa(program, env)?)
+        Ok(self.add_exp.generate_koopa(program, env)?)
     }
 }
 
@@ -122,6 +122,80 @@ impl<'ast> GenerateKoopa<'ast> for PrimaryExp {
                 let cur_func = env.get_cur_func().unwrap();
                 let cur_func_data = program.func_mut(*cur_func);
                 Ok(cur_func_data.dfg_mut().new_value().integer(*num))
+            }
+        }
+    }
+}
+
+impl<'ast> GenerateKoopa<'ast> for MulExp {
+    type Out = Value;
+
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
+        match self {
+            Self::UnaryExp(unary_exp) => {
+                Ok(unary_exp.generate_koopa(program, env)?)
+            },
+            Self::Mul(mul_exp, unary_exp) => {
+                let lhs = mul_exp.generate_koopa(program, env)?;
+                let rhs = unary_exp.generate_koopa(program, env)?;
+                let cur_func = env.get_cur_func().unwrap();
+                let cur_func_data = program.func_mut(*cur_func);
+                let value = cur_func_data.dfg_mut().new_value().binary(BinaryOp::Mul, lhs, rhs);
+                let cur_bb = env.get_cur_bb().unwrap();
+                cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(value).unwrap();
+                Ok(value)
+            },
+            Self::Div(mul_exp, unary_exp) => {
+                let lhs = mul_exp.generate_koopa(program, env)?;
+                let rhs = unary_exp.generate_koopa(program, env)?;
+                let cur_func = env.get_cur_func().unwrap();
+                let cur_func_data = program.func_mut(*cur_func);
+                let value = cur_func_data.dfg_mut().new_value().binary(BinaryOp::Div, lhs, rhs);
+                let cur_bb = env.get_cur_bb().unwrap();
+                cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(value).unwrap();
+                Ok(value)
+            },
+            Self::Mod(mul_exp, unary_exp) => {
+                let lhs = mul_exp.generate_koopa(program, env)?;
+                let rhs = unary_exp.generate_koopa(program, env)?;
+                let cur_func = env.get_cur_func().unwrap();
+                let cur_func_data = program.func_mut(*cur_func);
+                let value = cur_func_data.dfg_mut().new_value().binary(BinaryOp::Mod, lhs, rhs);
+                let cur_bb = env.get_cur_bb().unwrap();
+                cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(value).unwrap();
+                Ok(value)
+            }
+        }
+    }
+}
+
+impl<'ast> GenerateKoopa<'ast> for AddExp {
+    type Out = Value;
+
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
+        match self {
+            Self::MulExp(mul_exp) => {
+                Ok(mul_exp.generate_koopa(program, env)?)
+            },
+            Self::Add(add_exp, mul_exp) => {
+                let lhs = add_exp.generate_koopa(program, env)?;
+                let rhs = mul_exp.generate_koopa(program, env)?;
+                let cur_func = env.get_cur_func().unwrap();
+                let cur_func_data = program.func_mut(*cur_func);
+                let value = cur_func_data.dfg_mut().new_value().binary(BinaryOp::Add, lhs, rhs);
+                let cur_bb = env.get_cur_bb().unwrap();
+                cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(value).unwrap();
+                Ok(value)
+            },
+            Self::Sub(add_exp, mul_exp) => {
+                let lhs = add_exp.generate_koopa(program, env)?;
+                let rhs = mul_exp.generate_koopa(program, env)?;
+                let cur_func = env.get_cur_func().unwrap();
+                let cur_func_data = program.func_mut(*cur_func);
+                let value = cur_func_data.dfg_mut().new_value().binary(BinaryOp::Sub, lhs, rhs);
+                let cur_bb = env.get_cur_bb().unwrap();
+                cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(value).unwrap();
+                Ok(value)
             }
         }
     }

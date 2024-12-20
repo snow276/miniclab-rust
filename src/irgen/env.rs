@@ -6,12 +6,13 @@ use super::symbol::{SymbolInfo, SymbolTable};
 pub struct IrgenEnv<'s> {
     cur_func: Option<Function>,
     cur_bb: Option<BasicBlock>,
+    cur_bb_returned: bool,
     sym_tab: SymbolTable<'s>,
 }
 
 impl<'s> IrgenEnv<'s> {
     pub fn new() -> Self {
-        Self { cur_func: None, cur_bb: None, sym_tab: SymbolTable::new() }
+        Self { cur_func: None, cur_bb: None, cur_bb_returned: false, sym_tab: SymbolTable::new() }
     }
 
     pub fn get_cur_func(&self) -> Option<&Function> {
@@ -44,5 +45,13 @@ impl<'s> IrgenEnv<'s> {
 
     pub fn get_symbol(&self, ident: &'s str) -> Option<&SymbolInfo> {
         self.sym_tab.get_value(ident)
+    }
+
+    pub fn set_cur_bb_returned(&mut self, returned: bool) {
+        self.cur_bb_returned = returned;
+    }
+
+    pub fn is_cur_bb_returned(&self) -> bool {
+        self.cur_bb_returned
     }
 }

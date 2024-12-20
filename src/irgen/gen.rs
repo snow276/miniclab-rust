@@ -155,6 +155,9 @@ impl<'ast> GenerateKoopa<'ast> for Block {
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         for block_item in &self.block_item_list {
+            if env.is_cur_bb_returned() {
+                break;
+            }
             block_item.generate_koopa(program, env)?;
         }
         Ok(())
@@ -207,6 +210,7 @@ impl<'ast> GenerateKoopa<'ast> for Stmt {
                 let ret = cur_func_data.dfg_mut().new_value().ret(Some(ret_val));
                 let cur_bb = env.get_cur_bb().unwrap();
                 cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(ret).unwrap();
+                env.set_cur_bb_returned(true);
             },
         }
         

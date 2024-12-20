@@ -1,4 +1,4 @@
-use super::{env::IrgenEnv, IrgenError};
+use super::{env::IrgenEnv, eval::Evaluate, symbol::SymbolInfo, IrgenError};
 use crate::ast::*;
 use koopa::ir::{builder::{BasicBlockBuilder, LocalInstBuilder, ValueBuilder}, BinaryOp, FunctionData, Program, Type, Value};
 use std::result::Result;
@@ -6,22 +6,118 @@ use std::result::Result;
 pub trait GenerateKoopa<'ast> {
     type Out;
 
-    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError>;
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError>;
 }
 
 impl<'ast> GenerateKoopa<'ast> for CompUnit {
     type Out = ();
 
-    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         self.func_def.generate_koopa(program, env)?;
         Ok(())
+    }
+}
+
+impl<'ast> GenerateKoopa<'ast> for Decl {
+    type Out = ();
+
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+        match self {
+            Self::ConstDecl(const_decl) => {
+                const_decl.generate_koopa(program, env)
+            },
+            Self::VarDecl(var_decl) => {
+                var_decl.generate_koopa(program, env)
+            },
+        }        
+    }
+}
+
+impl<'ast> GenerateKoopa<'ast> for ConstDecl {
+    type Out = ();
+
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+        for const_def in &self.const_def_list {
+            const_def.generate_koopa(program, env)?;
+        }
+        Ok(())
+    }
+}
+
+impl<'ast> GenerateKoopa<'ast> for BType {
+    type Out = Type;
+
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+        match self {
+            Self::Int => Ok(Type::get_i32()),
+        }
+    }
+}
+
+impl<'ast> GenerateKoopa<'ast> for ConstDef {
+    type Out = ();
+
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+        let const_val = self.const_init_val.evaluate(env)?;
+        if env.contains_symbol(&self.ident) {
+            return Err(IrgenError::SymbolDeclaredMoreThanOnce);
+        }
+        env.new_symbol_const(&self.ident, const_val);
+        Ok(())
+    }   
+}
+
+impl<'ast> GenerateKoopa<'ast> for VarDecl {
+    type Out = ();
+
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+        for var_def in &self.var_def_list {
+            var_def.generate_koopa(program, env)?;
+        }
+        Ok(())
+    }
+}
+
+impl<'ast> GenerateKoopa<'ast> for VarDef {
+    type Out = ();
+
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+        if env.contains_symbol(&self.ident) {
+            return Err(IrgenError::SymbolDeclaredMoreThanOnce);
+        }
+        let ty = self.b_type.generate_koopa(program, env)?;
+        let cur_func = env.get_cur_func().unwrap();
+        let cur_func_data = program.func_mut(*cur_func);
+        let alloc = cur_func_data.dfg_mut().new_value().alloc(ty);
+        cur_func_data.dfg_mut().set_value_name(alloc, Some(format!("@{}", self.ident)));
+        let cur_bb = env.get_cur_bb().unwrap();
+        cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(alloc).unwrap();
+        env.new_symbol_var(&self.ident, alloc);
+
+        if let Some(init_val) = self.init_val.as_ref() {
+            let val = init_val.generate_koopa(program, env)?;
+            let cur_func = env.get_cur_func().unwrap();
+            let cur_func_data = program.func_mut(*cur_func);
+            let store = cur_func_data.dfg_mut().new_value().store(val, alloc);
+            let cur_bb = env.get_cur_bb().unwrap();
+            cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(store).unwrap();
+        }
+        Ok(())
+    }
+}
+
+impl<'ast> GenerateKoopa<'ast> for InitVal {
+    type Out = Value;
+
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+        self.exp.generate_koopa(program, env)
     }
 }
 
 impl<'ast> GenerateKoopa<'ast> for FuncDef {
     type Out = ();
 
-    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         let params_ty = vec![];
         let ret_ty = self.func_type.generate_koopa(program, env)?;
         let func = program.new_func(FunctionData::new(
@@ -38,7 +134,7 @@ impl<'ast> GenerateKoopa<'ast> for FuncDef {
         env.set_cur_func(func);
         env.set_cur_bb(entry);
 
-        self.block.stmt.generate_koopa(program, env)?;
+        self.block.generate_koopa(program, env)?;
 
         Ok(())
     }
@@ -47,10 +143,35 @@ impl<'ast> GenerateKoopa<'ast> for FuncDef {
 impl<'ast> GenerateKoopa<'ast> for FuncType {
     type Out = Type;
 
-    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
             Self::Int => Ok(Type::get_i32()),
-            _ => Err(IrgenError::UnknownType),
+        }
+    }
+}
+
+impl<'ast> GenerateKoopa<'ast> for Block {
+    type Out = ();
+
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+        for block_item in &self.block_item_list {
+            block_item.generate_koopa(program, env)?;
+        }
+        Ok(())
+    }
+}
+
+impl<'ast> GenerateKoopa<'ast> for BlockItem {
+    type Out = ();
+
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+        match self {
+            Self::Stmt(stmt) => {
+                stmt.generate_koopa(program, env)
+            },
+            Self::Decl(decl) => {
+                decl.generate_koopa(program, env)
+            },
         }
     }
 }
@@ -58,13 +179,36 @@ impl<'ast> GenerateKoopa<'ast> for FuncType {
 impl<'ast> GenerateKoopa<'ast> for Stmt {
     type Out = ();
 
-    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
-        let ret_val = self.exp.generate_koopa(program, env)?;
-        let cur_func = env.get_cur_func().unwrap();
-        let cur_func_data = program.func_mut(*cur_func);
-        let ret = cur_func_data.dfg_mut().new_value().ret(Some(ret_val));
-        let cur_bb = env.get_cur_bb().unwrap();
-        cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(ret).unwrap();
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+        match self {
+            Self::Assign(l_val, exp) => {
+                let val = exp.generate_koopa(program, env)?;
+                if let Some(symbol_info) = env.get_symbol(&l_val.ident) {
+                    match symbol_info {
+                        SymbolInfo::Const(_) => {
+                            return Err(IrgenError::AssignToConst);
+                        },
+                        SymbolInfo::Variable(alloc) => {
+                            let cur_func = env.get_cur_func().unwrap();
+                            let cur_func_data = program.func_mut(*cur_func);
+                            let store = cur_func_data.dfg_mut().new_value().store(val, *alloc);
+                            let cur_bb = env.get_cur_bb().unwrap();
+                            cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(store).unwrap();
+                        }
+                    }
+                } else {
+                    return Err(IrgenError::SymbolUndeclared);
+                }
+            },
+            Self::Return(exp) => {
+                let ret_val = exp.generate_koopa(program, env)?;
+                let cur_func = env.get_cur_func().unwrap();
+                let cur_func_data = program.func_mut(*cur_func);
+                let ret = cur_func_data.dfg_mut().new_value().ret(Some(ret_val));
+                let cur_bb = env.get_cur_bb().unwrap();
+                cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(ret).unwrap();
+            },
+        }
         
         Ok(())
     }
@@ -73,18 +217,44 @@ impl<'ast> GenerateKoopa<'ast> for Stmt {
 impl<'ast> GenerateKoopa<'ast> for Exp {
     type Out = Value;
 
-    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
-        Ok(self.l_or_exp.generate_koopa(program, env)?)
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+        self.l_or_exp.generate_koopa(program, env)
+    }
+}
+
+impl<'ast> GenerateKoopa<'ast> for LVal {
+    type Out = Value;
+
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+        if let Some(symbol_info) = env.get_symbol(&self.ident) {
+            match symbol_info {
+                SymbolInfo::Const(val) => {
+                    let cur_func = env.get_cur_func().unwrap();
+                    let cur_func_data = program.func_mut(*cur_func);
+                    Ok(cur_func_data.dfg_mut().new_value().integer(*val))
+                },
+                SymbolInfo::Variable(alloc) => {
+                    let cur_func = env.get_cur_func().unwrap();
+                    let cur_func_data = program.func_mut(*cur_func);
+                    let load = cur_func_data.dfg_mut().new_value().load(*alloc);
+                    let cur_bb = env.get_cur_bb().unwrap();
+                    cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(load).unwrap();
+                    Ok(load)
+                }
+            }
+        } else {
+            Err(IrgenError::SymbolUndeclared)
+        }
     }
 }
 
 impl<'ast> GenerateKoopa<'ast> for UnaryExp {
     type Out = Value;
 
-    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
             Self::PrimaryExp(primary_exp) => {
-                Ok(primary_exp.generate_koopa(program, env)?)
+                primary_exp.generate_koopa(program, env)
             },
             Self::UnaryExp(op, unary_exp) => {
                 let exp = unary_exp.generate_koopa(program, env)?;
@@ -113,10 +283,13 @@ impl<'ast> GenerateKoopa<'ast> for UnaryExp {
 impl<'ast> GenerateKoopa<'ast> for PrimaryExp {
     type Out = Value;
 
-    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
             Self::Exp(exp) => {
-                Ok(exp.generate_koopa(program, env)?)
+                exp.generate_koopa(program, env)
+            },
+            Self::LVal(l_val) => {
+                l_val.generate_koopa(program, env)
             },
             Self::Number(num) => {
                 let cur_func = env.get_cur_func().unwrap();
@@ -130,10 +303,10 @@ impl<'ast> GenerateKoopa<'ast> for PrimaryExp {
 impl<'ast> GenerateKoopa<'ast> for MulExp {
     type Out = Value;
 
-    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
             Self::UnaryExp(unary_exp) => {
-                Ok(unary_exp.generate_koopa(program, env)?)
+                unary_exp.generate_koopa(program, env)
             },
             Self::Mul(mul_exp, unary_exp) => {
                 let lhs = mul_exp.generate_koopa(program, env)?;
@@ -172,10 +345,10 @@ impl<'ast> GenerateKoopa<'ast> for MulExp {
 impl<'ast> GenerateKoopa<'ast> for AddExp {
     type Out = Value;
 
-    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
             Self::MulExp(mul_exp) => {
-                Ok(mul_exp.generate_koopa(program, env)?)
+                mul_exp.generate_koopa(program, env)
             },
             Self::Add(add_exp, mul_exp) => {
                 let lhs = add_exp.generate_koopa(program, env)?;
@@ -204,10 +377,10 @@ impl<'ast> GenerateKoopa<'ast> for AddExp {
 impl<'ast> GenerateKoopa<'ast> for RelExp {
     type Out = Value;
 
-    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
             Self::AddExp(add_exp) => {
-                Ok(add_exp.generate_koopa(program, env)?)
+                add_exp.generate_koopa(program, env)
             },
             Self::Lt(add_exp, rel_exp) => {
                 let lhs = add_exp.generate_koopa(program, env)?;
@@ -256,10 +429,10 @@ impl<'ast> GenerateKoopa<'ast> for RelExp {
 impl<'ast> GenerateKoopa<'ast> for EqExp {
     type Out = Value;
 
-    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
             Self::RelExp(rel_exp) => {
-                Ok(rel_exp.generate_koopa(program, env)?)
+                rel_exp.generate_koopa(program, env)
             },
             Self::Eq(eq_exp, rel_exp) => {
                 let lhs = eq_exp.generate_koopa(program, env)?;
@@ -288,10 +461,10 @@ impl<'ast> GenerateKoopa<'ast> for EqExp {
 impl<'ast> GenerateKoopa<'ast> for LAndExp {
     type Out = Value;
 
-    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
             Self::EqExp(eq_exp) => {
-                Ok(eq_exp.generate_koopa(program, env)?)
+                eq_exp.generate_koopa(program, env)
             },
             Self::And(l_and_exp, eq_exp) => {
                 let lhs = l_and_exp.generate_koopa(program, env)?;
@@ -315,7 +488,7 @@ impl<'ast> GenerateKoopa<'ast> for LAndExp {
 impl<'ast> GenerateKoopa<'ast> for LOrExp {
     type Out = Value;
 
-    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv) -> Result<Self::Out, IrgenError> {
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
             Self::LAndExp(l_and_exp) => {
                 Ok(l_and_exp.generate_koopa(program, env)?)
@@ -336,5 +509,13 @@ impl<'ast> GenerateKoopa<'ast> for LOrExp {
                 Ok(value)
             }
         }
+    }
+}
+
+impl<'ast> GenerateKoopa<'ast> for ConstExp {
+    type Out = Value;
+
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+        self.exp.generate_koopa(program, env)
     }
 }

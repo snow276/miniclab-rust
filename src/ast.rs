@@ -1,27 +1,85 @@
 // EBNF:
-// CompUnit    ::= FuncDef;
+// CompUnit      ::= FuncDef;
 
-// FuncDef     ::= FuncType IDENT "(" ")" Block;
-// FuncType    ::= "int";
+// Decl          ::= ConstDecl | VarDecl;
+// ConstDecl     ::= "const" BType ConstDef {"," ConstDef} ";";
+// BType         ::= "int";
+// ConstDef      ::= IDENT "=" ConstInitVal;
+// ConstInitVal  ::= ConstExp;
+// VarDecl       ::= BType VarDef {"," VarDef} ";";
+// VarDef        ::= IDENT | IDENT "=" InitVal;
+// InitVal       ::= Exp;
 
-// Block       ::= "{" Stmt "}";
-// Stmt        ::= "return" Exp ";";
+// FuncDef       ::= FuncType IDENT "(" ")" Block;
+// FuncType      ::= "int";
 
-// Exp         ::= LOrExp;
-// PrimaryExp  ::= "(" Exp ")" | Number;
-// Number      ::= INT_CONST;
-// UnaryExp    ::= PrimaryExp | UnaryOp UnaryExp;
-// UnaryOp     ::= "+" | "-" | "!";
-// MulExp      ::= UnaryExp | MulExp ("*" | "/" | "%") UnaryExp;
-// AddExp      ::= MulExp | AddExp ("+" | "-") MulExp;
-// RelExp      ::= AddExp | RelExp ("<" | ">" | "<=" | ">=") AddExp;
-// EqExp       ::= RelExp | EqExp ("==" | "!=") RelExp;
-// LAndExp     ::= EqExp | LAndExp "&&" EqExp;
-// LOrExp      ::= LAndExp | LOrExp "||" LAndExp;
+// Block         ::= "{" {BlockItem} "}";
+// BlockItem     ::= Decl | Stmt;
+// Stmt          ::= LVal "=" Exp ";"
+//                 | "return" Exp ";";
+
+// Exp           ::= LOrExp;
+// LVal          ::= IDENT;
+// PrimaryExp    ::= "(" Exp ")" | LVal | Number;
+// Number        ::= INT_CONST;
+// UnaryExp      ::= PrimaryExp | UnaryOp UnaryExp;
+// UnaryOp       ::= "+" | "-" | "!";
+// MulExp        ::= UnaryExp | MulExp ("*" | "/" | "%") UnaryExp;
+// AddExp        ::= MulExp | AddExp ("+" | "-") MulExp;
+// RelExp        ::= AddExp | RelExp ("<" | ">" | "<=" | ">=") AddExp;
+// EqExp         ::= RelExp | EqExp ("==" | "!=") RelExp;
+// LAndExp       ::= EqExp | LAndExp "&&" EqExp;
+// LOrExp        ::= LAndExp | LOrExp "||" LAndExp;
+// ConstExp      ::= Exp;
 
 #[derive(Debug)]
 pub struct CompUnit {
     pub func_def: FuncDef,
+}
+
+#[derive(Debug)]
+pub enum Decl {
+    ConstDecl(ConstDecl),
+    VarDecl(VarDecl),
+}
+
+#[derive(Debug)]
+pub struct ConstDecl {
+    pub const_def_list: Vec<ConstDef>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum BType {
+    Int,
+}
+
+#[derive(Debug)]
+pub struct ConstDef {
+    pub b_type: BType,
+    pub ident: String,
+    pub const_init_val: Box<ConstInitVal>,
+}
+
+#[derive(Debug)]
+pub struct ConstInitVal {
+    pub const_exp: Box<ConstExp>,
+}
+
+#[derive(Debug)]
+pub struct VarDecl {
+    pub var_def_list: Vec<VarDef>,
+}
+
+#[derive(Debug)]
+pub struct VarDef {
+    pub b_type: BType,
+    pub ident: String,
+    pub init_val: Box<Option<InitVal>>,
+}
+
+#[derive(Debug)]
+pub struct InitVal {
+    pub exp: Box<Exp>,
 }
 
 #[derive(Debug)]
@@ -38,17 +96,36 @@ pub enum FuncType {
 
 #[derive(Debug)]
 pub struct Block {
-    pub stmt: Stmt,
+    pub block_item_list: Vec<BlockItem>,
 }
 
 #[derive(Debug)]
-pub struct Stmt {
-    pub exp: Exp,
+pub enum BlockItem {
+    Decl(Decl),
+    Stmt(Stmt),
+}
+
+#[derive(Debug)]
+pub enum Stmt {
+    Assign(LVal, Box<Exp>),
+    Return(Box<Exp>),
 }
 
 #[derive(Debug)]
 pub struct Exp {
     pub l_or_exp: LOrExp,
+}
+
+#[derive(Debug)]
+pub struct LVal {
+    pub ident: String,
+}
+
+#[derive(Debug)]
+pub enum PrimaryExp {
+    Exp(Box<Exp>),
+    LVal(LVal),
+    Number(i32),
 }
 
 #[derive(Debug)]
@@ -58,9 +135,10 @@ pub enum UnaryExp {
 }
 
 #[derive(Debug)]
-pub enum PrimaryExp {
-    Exp(Box<Exp>),
-    Number(i32),
+pub enum UnaryOp {
+    Plus,
+    Minus,
+    Not,
 }
 
 #[derive(Debug)]
@@ -107,8 +185,6 @@ pub enum LOrExp {
 }
 
 #[derive(Debug)]
-pub enum UnaryOp {
-    Plus,
-    Minus,
-    Not,
+pub struct ConstExp {
+    pub exp: Box<Exp>,
 }

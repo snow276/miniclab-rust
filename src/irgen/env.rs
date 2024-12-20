@@ -1,14 +1,17 @@
 use koopa::ir::entities::Function;
-use koopa::ir::BasicBlock;
+use koopa::ir::{BasicBlock, Value};
 
-pub struct IrgenEnv {
+use super::symbol::{SymbolInfo, SymbolTable};
+
+pub struct IrgenEnv<'s> {
     cur_func: Option<Function>,
     cur_bb: Option<BasicBlock>,
+    sym_tab: SymbolTable<'s>,
 }
 
-impl IrgenEnv {
+impl<'s> IrgenEnv<'s> {
     pub fn new() -> Self {
-        Self { cur_func: None, cur_bb: None }
+        Self { cur_func: None, cur_bb: None, sym_tab: SymbolTable::new() }
     }
 
     pub fn get_cur_func(&self) -> Option<&Function> {
@@ -25,5 +28,21 @@ impl IrgenEnv {
 
     pub fn set_cur_bb(&mut self, bb: BasicBlock) {
         self.cur_bb = Some(bb);
+    }
+
+    pub fn new_symbol_const(&mut self, ident: &'s str, val: i32) {
+        self.sym_tab.set_value(ident, SymbolInfo::Const(val));
+    }
+
+    pub fn new_symbol_var(&mut self, ident: &'s str, val: Value) {
+        self.sym_tab.set_value(ident, SymbolInfo::Variable(val));
+    }
+
+    pub fn contains_symbol(&self, ident: &'s str) -> bool {
+        self.sym_tab.contains_key(ident)
+    }
+
+    pub fn get_symbol(&self, ident: &'s str) -> Option<&SymbolInfo> {
+        self.sym_tab.get_value(ident)
     }
 }

@@ -11,7 +11,47 @@ match {
   _
 }
 
-pub CompUnit: CompUnit = <func_def: FuncDef> => CompUnit{ <> };
+pub CompUnit: CompUnit = <func_def: FuncDef> => CompUnit { <> };
+
+Decl: Decl = {
+  <const_decl: ConstDecl> => Decl::ConstDecl(<>),
+  <var_decl: VarDecl> => Decl::VarDecl(<>),
+}
+
+ConstDecl: ConstDecl = {
+  "const" <b_type: BType> <first_const_def: ConstDef> <mut const_def_list: ("," <ConstDef>)*> ";" => {
+    const_def_list.insert(0, first_const_def);
+    for const_def in &mut const_def_list {
+      const_def.b_type = b_type;
+    }
+    ConstDecl { const_def_list }
+  }
+}
+
+BType: BType = "int" => BType::Int;
+
+ConstDef: ConstDef = {
+  <ident: Ident> "=" <const_init_val: ConstInitVal> => ConstDef { b_type: BType::Int, ident: ident, const_init_val: Box::new(const_init_val)},
+}
+
+ConstInitVal: ConstInitVal = <const_exp: ConstExp> => ConstInitVal { const_exp: Box::new(const_exp) };
+
+VarDecl: VarDecl = {
+  <b_type: BType> <first_var_def: VarDef> <mut var_def_list: ("," <VarDef>)*> ";" => {
+    var_def_list.insert(0, first_var_def);
+    for var_def in &mut var_def_list {
+      var_def.b_type = b_type;
+    }
+    VarDecl { var_def_list }
+  }
+}
+
+VarDef: VarDef = {
+  <ident: Ident> => VarDef{ b_type: BType::Int, ident: ident, init_val: Box::new(None) },
+  <ident: Ident> "=" <init_val: InitVal> => VarDef { b_type: BType::Int, ident: ident, init_val: Box::new(Some(init_val)) },
+}
+
+InitVal: InitVal = <exp: Exp> => InitVal { exp: Box::new(exp) };
 
 FuncDef: FuncDef = {
   <func_type: FuncType> <ident: Ident> "(" ")" <block: Block> => {
@@ -21,20 +61,37 @@ FuncDef: FuncDef = {
 
 FuncType: FuncType = "int" => FuncType::Int;
 
-Block: Block = "{" <stmt: Stmt> "}" => Block{ <> };
+Block: Block = "{" <block_item_list: (BlockItem)*> "}" => Block { <> };
 
-Stmt: Stmt = "return" <exp: Exp> ";" => Stmt { <> };
+BlockItem: BlockItem = {
+  <decl: Decl> => BlockItem::Decl(<>),
+  <stmt: Stmt> => BlockItem::Stmt(<>),
+}
 
-Exp: Exp = <l_or_exp: LOrExp> => Exp{ <> };
+Stmt: Stmt = {
+  <l_val: LVal> "=" <exp: Exp> ";" => Stmt::Assign(l_val, Box::new(exp)),
+  "return" <exp: Exp> ";" => Stmt::Return(Box::new(exp)),
+}
+
+Exp: Exp = <l_or_exp: LOrExp> => Exp { <> };
+
+LVal: LVal = <ident: Ident> => LVal { <> };
+
+PrimaryExp: PrimaryExp = {
+  "(" <exp: Exp> ")" => PrimaryExp::Exp(Box::new(exp)),
+  <l_val: LVal> => PrimaryExp::LVal(<>),
+  <number: Number> => PrimaryExp::Number(<>),
+}
 
 UnaryExp: UnaryExp = {
   <primary_exp: PrimaryExp> => UnaryExp::PrimaryExp(<>),
   <unary_op: UnaryOp> <unary_exp: UnaryExp> => UnaryExp::UnaryExp(unary_op, Box::new(unary_exp)) ,
 }
 
-PrimaryExp: PrimaryExp = {
-  "(" <exp: Exp> ")" => PrimaryExp::Exp(Box::new(exp)),
-  <number: Number> => PrimaryExp::Number(<>),
+UnaryOp: UnaryOp = {
+  "+" => UnaryOp::Plus,
+  "-" => UnaryOp::Minus,
+  "!" => UnaryOp::Not,
 }
 
 MulExp: MulExp = {
@@ -74,11 +131,7 @@ LOrExp: LOrExp = {
   <l_or_exp: LOrExp> "||" <l_and_exp: LAndExp> => LOrExp::Or(Box::new(l_or_exp), Box::new(l_and_exp)),
 }
 
-UnaryOp: UnaryOp = {
-  "+" => UnaryOp::Plus,
-  "-" => UnaryOp::Minus,
-  "!" => UnaryOp::Not,
-}
+ConstExp: ConstExp = <exp: Exp> => ConstExp { exp: Box::new(exp) };
 
 Number: i32 = <num: IntConst> => <>;
 

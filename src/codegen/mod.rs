@@ -1,3 +1,4 @@
+mod asmutil;
 mod env;
 mod gen;
 
@@ -16,12 +17,14 @@ pub fn generate_riscv(program: &Program) -> Result<String, CodegenError> {
 
 pub enum CodegenError {
     UnknownInstruction,
+    MissingReturnValue,
 }
 
 impl fmt::Display for CodegenError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
       match self {
         Self::UnknownInstruction => write!(f, "Unknown instruction"),
+        Self::MissingReturnValue => write!(f, "Missing return value"),
       }
     }
   }

@@ -59,11 +59,13 @@ pub fn generate_gt(riscv_text: &mut String, dest: &str, src1: &str, src2: &str) 
 }
 
 pub fn generate_le(riscv_text: &mut String, dest: &str, src1: &str, src2: &str) {
-    riscv_text.push_str(&format!("  sgt {}, {}, {}\n", dest, src2, src1));
+    riscv_text.push_str(&format!("  sgt {}, {}, {}\n", dest, src1, src2));
+    riscv_text.push_str(&format!("  seqz {}, {}\n", dest, dest));
 }
 
 pub fn generate_ge(riscv_text: &mut String, dest: &str, src1: &str, src2: &str) {
-    riscv_text.push_str(&format!("  slt {}, {}, {}\n", dest, src2, src1));
+    riscv_text.push_str(&format!("  slt {}, {}, {}\n", dest, src1, src2));
+    riscv_text.push_str(&format!("  seqz {}, {}\n", dest, dest));
 }
 
 pub fn generate_lw(riscv_text: &mut String, dest: &str, base: &str, offset: i32) {

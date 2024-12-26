@@ -222,7 +222,7 @@ pub struct CodegenEnv<'p> {
 
 需要支持仅由 0 或 1 个 `stmt` 构成的语句。
 
-再记录一个相关 `ret` 的细节：现在 ret 允许直接 `return ;` 这样不指定返回值。这应该是 SysY 里的 UB。在实现上，最好一开始搞一个 `%ret = alloc i32`，然后如果有返回值的话再把返回值 `load` 到 `%ret` 里面。（不过这种情况直接补上一个 `return 0` 应该也行，这也算是 UB 的一种实现方式吧）
+再记录一个相关 `ret` 的细节：现在 ret 允许直接 `return ;` 这样不指定返回值。这应该是 SysY 里的 UB。在实现上，最好一开始搞一个 `%ret = alloc i32`，然后如果有返回值的话再把返回值存到 `%ret` 里面，最后 `load` 这个 `%ret` 里面的值作为最终 `ret` 的值。（不过这种情况直接补上一个   `return 0` 应该也行，这也算是 UB 的一种实现方式吧。）
 
 #### 2. 多重符号表
 
@@ -233,3 +233,90 @@ pub struct CodegenEnv<'p> {
 插入符号：只在当前语句块的符号表中插入新的键值对。
 
 查询符号定义：需要支持跨符号表查询。如果当前符号表中有这个符号，那么就找到了；否则，就一层一层往更大的语句块中找，直到找到符号/在最大的语句块中也找不到符号为止。
+
+> 特别注意：Lv5 中所说的语句块/作用域对应的是 AST 中的 `Block` ，而非 Koopa IR 中的 `BasicBlock` ！AST 中的 `Block` 和 Koopa IR 中的 `BasicBlock` 不是一回事！前者的作用仅限于不同的语句块表示了不同的作用域，后者则会在之后处理 `if-else` 这类语句的时候用到，更像是每个 `BasicBlock` 对应一个 Label 。`BasicBlock` 的特点是，每个 `BasicBlock` 最后都要以 `ret` / `jmp` / `br` 结尾。
+
+### 数据结构设计
+
+综合上面的需求，修改后的数据结构如下：
+
+```rust
+pub struct IrgenEnv<'s> {
+    cur_func: Option<Function>,
+    cur_bb: Option<BasicBlock>,
+    cur_bb_returned: bool,
+    sym_tab: Vec<Box<SymbolTable<'s>>>,
+    cur_scope_id: i32,
+}
+```
+
+其中 `sym_tab` 存储了每个作用域自己的符号表。 `cur_scope_id` 用于给每个作用域都分配一个唯一的编号，这个编号会被放在 Koopa IR 中变量符号的名字中，用来避免不同作用域中同名的符号在 IR 中重名。
+
+### 进入/退出作用域
+
+每当进入一个新的作用域时，调用 `IrgenEnv::push_scope()` 方法创建一个新的符号表。
+
+```rust
+    pub fn push_scope(&mut self) {
+        self.sym_tab.push(Box::new(SymbolTable::new()));
+        self.cur_scope_id += 1;
+    }
+```
+
+每当退出一个作用域时，调用 `IrgenEnv::pop_scope()` 方法删掉末尾的符号表。
+
+```rust
+    pub fn pop_scope(&mut self) {
+        self.sym_tab.pop();
+    }
+```
+
+进入/退出作用域的发生时间：
+
+1. 在 `Funcdef` 中创建最初时的作用域并进入这个作用域，然后生成这个函数的 IR，最后依然是在 `Funcdef` 中退出这个最初的作用域
+2. 在处理 `Stmt::Block` 时，进入新的作用域，生成这个 `Block` 的 IR，并退出这个作用域。
+
+   ```rust
+               Self::Block(block) => {
+                   env.push_scope();
+                   block.generate_koopa(program, env)?;
+                   env.pop_scope();
+               },
+   ```
+
+别的代码都很好写了。
+
+### 其他
+
+把前端的生成的部分中常用到的重复代码给提炼成了 `IrgenEnv` 的成员函数：
+
+```rust
+    pub fn new_value(&self, program: &'s mut Program) -> LocalBuilder<'s> {
+        let cur_func = self.cur_func.unwrap();
+        let cur_func_data = program.func_mut(cur_func);
+        cur_func_data.dfg_mut().new_value()
+    }
+
+    pub fn dfg_mut(&self, program: &'s mut Program) -> &'s mut DataFlowGraph {
+        let cur_func = self.cur_func.unwrap();
+        let cur_func_data = program.func_mut(cur_func);
+        cur_func_data.dfg_mut()
+    }
+
+    pub fn new_inst(&self, program: &'s mut Program) -> &'s mut InstList {
+        let cur_func = self.cur_func.unwrap();
+        let cur_bb = self.cur_bb.unwrap();
+        let cur_func_data = program.func_mut(cur_func);
+        cur_func_data.layout_mut().bb_mut(cur_bb).insts_mut()
+    }
+```
+
+这大大简化了在 Koopa IR 中创建新的值和指令的代码，比如现在创建一个 `alloc` 语句只需要：
+
+```rust
+        let alloc = env.new_value(program).alloc(ty);
+        env.dfg_mut(program).set_value_name(alloc, Some(format!("@{}_{}", self.ident, env.get_cur_scope_id())));
+        env.new_inst(program).push_key_back(alloc).unwrap(); 
+```
+
+Lv5 只需要修改前端，不用修改后端。顺利通过！

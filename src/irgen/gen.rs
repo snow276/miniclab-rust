@@ -59,7 +59,7 @@ impl<'ast> GenerateKoopa<'ast> for ConstDef {
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         let const_val = self.const_init_val.evaluate(env)?;
-        if env.contains_symbol(&self.ident) {
+        if env.contains_symbol_in_cur_scope(&self.ident) {
             return Err(IrgenError::SymbolDeclaredMoreThanOnce);
         }
         env.new_symbol_const(&self.ident, const_val);
@@ -82,14 +82,14 @@ impl<'ast> GenerateKoopa<'ast> for VarDef {
     type Out = ();
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
-        if env.contains_symbol(&self.ident) {
+        if env.contains_symbol_in_cur_scope(&self.ident) {
             return Err(IrgenError::SymbolDeclaredMoreThanOnce);
         }
         let ty = self.b_type.generate_koopa(program, env)?;
         let cur_func = env.get_cur_func().unwrap();
         let cur_func_data = program.func_mut(*cur_func);
         let alloc = cur_func_data.dfg_mut().new_value().alloc(ty);
-        cur_func_data.dfg_mut().set_value_name(alloc, Some(format!("@{}", self.ident)));
+        cur_func_data.dfg_mut().set_value_name(alloc, Some(format!("@{}_{}", self.ident, env.get_cur_scope_id())));
         let cur_bb = env.get_cur_bb().unwrap();
         cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(alloc).unwrap();
         env.new_symbol_var(&self.ident, alloc);
@@ -123,7 +123,7 @@ impl<'ast> GenerateKoopa<'ast> for FuncDef {
         let func = program.new_func(FunctionData::new(
             format!("@{}", self.ident), 
             params_ty, 
-            ret_ty
+            ret_ty.clone()
         ));
         let func_data = program.func_mut(func);
 
@@ -133,8 +133,15 @@ impl<'ast> GenerateKoopa<'ast> for FuncDef {
 
         env.set_cur_func(func);
         env.set_cur_bb(entry);
+        env.push_scope();
+
+        let alloc_ret = func_data.dfg_mut().new_value().alloc(ret_ty);
+        func_data.layout_mut().bb_mut(entry).insts_mut().push_key_back(alloc_ret).unwrap();
+        func_data.dfg_mut().set_value_name(alloc_ret, Some("%ret".into()));
+        env.new_symbol_var("%ret", alloc_ret);
 
         self.block.generate_koopa(program, env)?;
+        env.pop_scope();
 
         Ok(())
     }
@@ -203,12 +210,39 @@ impl<'ast> GenerateKoopa<'ast> for Stmt {
                     return Err(IrgenError::SymbolUndeclared);
                 }
             },
+            Self::Exp(exp) => {
+                if let Some(exp) = exp.as_ref() {
+                    exp.generate_koopa(program, env)?;
+                }
+            }
+            Self::Block(block) => {
+                env.push_scope();
+                block.generate_koopa(program, env)?;
+                env.pop_scope();
+            },
             Self::Return(exp) => {
-                let ret_val = exp.generate_koopa(program, env)?;
+                let ret_val = env.get_symbol("%ret").unwrap();
+                let ret_val = match ret_val {
+                    SymbolInfo::Variable(alloc) => *alloc,
+                    _ => unreachable!()
+                };
+                match exp.as_ref() {
+                    Some(exp) => {
+                        let val = exp.generate_koopa(program, env)?;
+                        let cur_func = env.get_cur_func().unwrap();
+                        let cur_func_data = program.func_mut(*cur_func);
+                        let store = cur_func_data.dfg_mut().new_value().store(val, ret_val);
+                        let cur_bb = env.get_cur_bb().unwrap();
+                        cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(store).unwrap();
+                    },
+                    None => {}
+                }
                 let cur_func = env.get_cur_func().unwrap();
                 let cur_func_data = program.func_mut(*cur_func);
-                let ret = cur_func_data.dfg_mut().new_value().ret(Some(ret_val));
+                let load = cur_func_data.dfg_mut().new_value().load(ret_val);
+                let ret = cur_func_data.dfg_mut().new_value().ret(Some(load));
                 let cur_bb = env.get_cur_bb().unwrap();
+                cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(load).unwrap();
                 cur_func_data.layout_mut().bb_mut(*cur_bb).insts_mut().push_key_back(ret).unwrap();
                 env.set_cur_bb_returned(true);
             },

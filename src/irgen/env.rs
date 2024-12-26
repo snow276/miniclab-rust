@@ -1,3 +1,5 @@
+use std::io::Cursor;
+
 use koopa::ir::entities::Function;
 use koopa::ir::{BasicBlock, Value};
 
@@ -7,12 +9,13 @@ pub struct IrgenEnv<'s> {
     cur_func: Option<Function>,
     cur_bb: Option<BasicBlock>,
     cur_bb_returned: bool,
-    sym_tab: SymbolTable<'s>,
+    sym_tab: Vec<Box<SymbolTable<'s>>>,
+    cur_scope_id: i32,
 }
 
 impl<'s> IrgenEnv<'s> {
     pub fn new() -> Self {
-        Self { cur_func: None, cur_bb: None, cur_bb_returned: false, sym_tab: SymbolTable::new() }
+        Self { cur_func: None, cur_bb: None, cur_bb_returned: false, sym_tab: Vec::new(), cur_scope_id: 0 }
     }
 
     pub fn get_cur_func(&self) -> Option<&Function> {
@@ -31,20 +34,41 @@ impl<'s> IrgenEnv<'s> {
         self.cur_bb = Some(bb);
     }
 
+    pub fn push_scope(&mut self) {
+        self.sym_tab.push(Box::new(SymbolTable::new()));
+        self.cur_scope_id += 1;
+    }
+
+    pub fn pop_scope(&mut self) {
+        self.sym_tab.pop();
+    }
+
+    pub fn get_cur_scope_id(&self) -> i32 {
+        self.cur_scope_id
+    }
+
     pub fn new_symbol_const(&mut self, ident: &'s str, val: i32) {
-        self.sym_tab.set_value(ident, SymbolInfo::Const(val));
+        let cur_sym_tab = self.sym_tab.last_mut().unwrap();
+        cur_sym_tab.set_value(ident, SymbolInfo::Const(val));
     }
 
     pub fn new_symbol_var(&mut self, ident: &'s str, val: Value) {
-        self.sym_tab.set_value(ident, SymbolInfo::Variable(val));
+        let cur_sym_tab = self.sym_tab.last_mut().unwrap();
+        cur_sym_tab.set_value(ident, SymbolInfo::Variable(val));
     }
 
-    pub fn contains_symbol(&self, ident: &'s str) -> bool {
-        self.sym_tab.contains_key(ident)
+    pub fn contains_symbol_in_cur_scope(&self, ident: &'s str) -> bool {
+        let cur_sym_tab = self.sym_tab.last().unwrap();
+        cur_sym_tab.contains_key(ident)
     }
 
     pub fn get_symbol(&self, ident: &'s str) -> Option<&SymbolInfo> {
-        self.sym_tab.get_value(ident)
+        for sym_tab in self.sym_tab.iter().rev() {
+            if let Some(symbol_info) = sym_tab.get_value(ident) {
+                return Some(symbol_info);
+            }
+        }
+        None
     }
 
     pub fn set_cur_bb_returned(&mut self, returned: bool) {

@@ -16,7 +16,9 @@
 // Block         ::= "{" {BlockItem} "}";
 // BlockItem     ::= Decl | Stmt;
 // Stmt          ::= LVal "=" Exp ";"
-//                 | "return" Exp ";";
+//                 | [Exp] ";"
+//                 | Block
+//                 | "return" [Exp] ";";
 
 // Exp           ::= LOrExp;
 // LVal          ::= IDENT;
@@ -108,7 +110,9 @@ pub enum BlockItem {
 #[derive(Debug)]
 pub enum Stmt {
     Assign(LVal, Box<Exp>),
-    Return(Box<Exp>),
+    Exp(Box<Option<Exp>>),
+    Block(Box<Block>),
+    Return(Box<Option<Exp>>),
 }
 
 #[derive(Debug)]

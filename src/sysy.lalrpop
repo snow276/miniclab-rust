@@ -70,7 +70,9 @@ BlockItem: BlockItem = {
 
 Stmt: Stmt = {
   <l_val: LVal> "=" <exp: Exp> ";" => Stmt::Assign(l_val, Box::new(exp)),
-  "return" <exp: Exp> ";" => Stmt::Return(Box::new(exp)),
+  <exp: Exp?> ";" => Stmt::Exp(Box::new(exp)),
+  <block: Block> => Stmt::Block(Box::new(block)),
+  "return" <exp: Exp?> ";" => Stmt::Return(Box::new(exp)),
 }
 
 Exp: Exp = <l_or_exp: LOrExp> => Exp { <> };

@@ -1,7 +1,10 @@
 use std::io::Cursor;
 
+use koopa::ir::builder::LocalBuilder;
+use koopa::ir::dfg::DataFlowGraph;
 use koopa::ir::entities::Function;
-use koopa::ir::{BasicBlock, Value};
+use koopa::ir::layout::InstList;
+use koopa::ir::{BasicBlock, Program, Value};
 
 use super::symbol::{SymbolInfo, SymbolTable};
 
@@ -32,6 +35,25 @@ impl<'s> IrgenEnv<'s> {
 
     pub fn set_cur_bb(&mut self, bb: BasicBlock) {
         self.cur_bb = Some(bb);
+    }
+
+    pub fn new_value(&self, program: &'s mut Program) -> LocalBuilder<'s> {
+        let cur_func = self.cur_func.unwrap();
+        let cur_func_data = program.func_mut(cur_func);
+        cur_func_data.dfg_mut().new_value()
+    }
+
+    pub fn dfg_mut(&self, program: &'s mut Program) -> &'s mut DataFlowGraph {
+        let cur_func = self.cur_func.unwrap();
+        let cur_func_data = program.func_mut(cur_func);
+        cur_func_data.dfg_mut()
+    }
+
+    pub fn new_inst(&self, program: &'s mut Program) -> &'s mut InstList {
+        let cur_func = self.cur_func.unwrap();
+        let cur_bb = self.cur_bb.unwrap();
+        let cur_func_data = program.func_mut(cur_func);
+        cur_func_data.layout_mut().bb_mut(cur_bb).insts_mut()
     }
 
     pub fn push_scope(&mut self) {

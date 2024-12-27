@@ -321,7 +321,7 @@ pub struct IrgenEnv<'s> {
 
 Lv5 只需要修改前端，不用修改后端。顺利通过！
 
-## Lv.6 `if` 语句
+## Lv.6 `if` 语句 Frontend
 
 本 level 需要实现处理 `if/else` 语句的功能。
 
@@ -481,4 +481,63 @@ fun @main(): i32 {
 
 ### 其他
 
-最终还是决定给标签起名字的时候加全局编号（主要是分支语句有else有的没有，不人为设置编号的话没法让所有统一分支中的标签名字中有一样的编号），然后给变量起名字的时候就不要全局编号了（没必要）。
+* 最终还是决定给标签起名字的时候加全局编号（主要是分支语句有else有的没有，不人为设置编号的话没法让所有统一分支中的标签名字中有一样的编号），然后给变量起名字的时候就不要全局编号了（没必要）。
+* 又一个很坑的地方！提交之后在 Lv6 隐藏测试中的 `13_branch2` 这个 case 错了。还好树洞上有好心人提示了是以下的情况导致的：
+
+  ```plaintext
+  int main() {
+    if (1) return 0;
+    else return 1;
+  }
+  ```
+
+  这种情况下作者最开始交上去的代码会生成如下的 IR：
+
+  ```
+  fun @main(): i32 {
+  %entry:
+    %ret = alloc i32
+    br 1, %then_0, %else_0
+
+  %then_0:
+    store 0, %ret
+    jump %exit
+
+  %else_0:
+    store 1, %ret
+    jump %exit
+
+  %end_0:
+
+  %exit:
+    %0 = load %ret
+    ret %0
+  }
+
+  ```
+
+  可以发现问题出现在 `%end_0` 这个分支。解决方案是，在这种情况下给这个分支手动加上一条 `jump %exit` 指令。至于怎么加呢？通过一些分析可以发现，对于一个函数而言，这种情况只可能出现在 `%exit` 之前的最后一个基本块中。所以只需要在 `FuncDef::generate_koopa()` 中加上以下的代码即可：具体而言，在生成了 `Block` 的代码之后，这之后的 `env.cur_bb` 指向的基本块就是 `%end` 之前的最后一个基本块，所以只需要在此时判断当前的基本块是否已经有过 `Return` 语句，如果没有的话，就手动加上一条 `jump %exit` 即可。
+
+  ```rust
+  impl<'ast> GenerateKoopa<'ast> for FuncDef {
+      type Out = ();
+
+      fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+  	// ...
+
+          self.block.generate_koopa(program, env)?;
+          env.pop_scope();
+
+  	// 增加的语句从这里开始
+          if !env.is_cur_bb_returned() {
+              let jump = env.new_value(program).jump(exit);
+              env.new_inst(program).push_key_back(jump).unwrap();
+          }
+  	// 增加的语句到这里结束
+
+          env.layout_mut(program).bbs_mut().extend([exit]);
+  	// ...
+      }
+  }
+
+  ```

@@ -584,8 +584,9 @@ impl<'ast> GenerateKoopa<'ast> for LAndExp {
                 eq_exp.generate_koopa(program, env)
             },
             Self::And(l_and_exp, eq_exp) => {
-                let rhs_bb = env.new_bb(program).basic_block(Some("%and_rhs".into()));
-                let end_bb = env.new_bb(program).basic_block(Some("%and_end".into()));
+                let aid = env.new_and_id();
+                let rhs_bb = env.new_bb(program).basic_block(Some(format!("%and_rhs_{}", aid).into()));
+                let end_bb = env.new_bb(program).basic_block(Some(format!("%and_end_{}", aid).into()));
 
                 let alloc_res = env.new_value(program).alloc(Type::get_i32());
                 env.new_inst(program).push_key_back(alloc_res).unwrap();
@@ -629,8 +630,9 @@ impl<'ast> GenerateKoopa<'ast> for LOrExp {
                 Ok(l_and_exp.generate_koopa(program, env)?)
             }
             Self::Or(l_or_exp, l_and_exp) => {
-                let rhs_bb = env.new_bb(program).basic_block(Some("%or_rhs".into()));
-                let end_bb = env.new_bb(program).basic_block(Some("%or_end".into()));
+                let oid = env.new_or_id();
+                let rhs_bb = env.new_bb(program).basic_block(Some(format!("%or_rhs_{}", oid).into()));
+                let end_bb = env.new_bb(program).basic_block(Some(format!("%or_end_{}", oid).into()));
                 
                 let alloc_res = env.new_value(program).alloc(Type::get_i32());
                 env.new_inst(program).push_key_back(alloc_res).unwrap();

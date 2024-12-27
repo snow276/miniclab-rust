@@ -1,4 +1,4 @@
-use koopa::ir::{BinaryOp, Value, ValueKind};
+use koopa::ir::{BasicBlock, BinaryOp, Value, ValueKind};
 
 use super::env::CodegenEnv;
 
@@ -76,6 +76,14 @@ pub fn generate_lw(riscv_text: &mut String, dest: &str, base: &str, offset: i32)
 pub fn generate_sw(riscv_text: &mut String, src: &str, base: &str, offset: i32) {
     assert!(offset >= -2048 && offset < 2048);
     riscv_text.push_str(&format!("  sw {}, {}({})\n", src, offset, base));
+}
+
+pub fn generate_bnez(riscv_text: &mut String, cond: &str, bb: &str) {
+    riscv_text.push_str(&format!("  bnez {}, {}\n", cond, bb));
+}
+
+pub fn generate_j(riscv_text: &mut String, bb: &str) {
+    riscv_text.push_str(&format!("  j {}\n", bb));
 }
 
 pub fn generate_addi_with_any_imm(riscv_text: &mut String, dest: &str, src: &str, tmp: &str, imm: i32) {
@@ -168,6 +176,32 @@ pub fn generate_binary(riscv_text: &mut String, env: &CodegenEnv, op: BinaryOp, 
     }
     let offset = env.get_frame_size() - env.get_offset(dest).unwrap();
     generate_sw_with_any_offset(riscv_text, tmp1, "sp", tmp3, offset);
+}
+
+pub fn generate_branch(riscv_text: &mut String, env: &CodegenEnv, cond: Value, bb_true: BasicBlock, bb_false: BasicBlock, tmp1: &str, tmp2: &str) {
+    let cond_data = env.get_value_data(cond);
+    let label_true = &env.get_label(bb_true)[1..];
+    let label_false = &env.get_label(bb_false)[1..];
+    match cond_data.kind() {
+        ValueKind::Integer(i) => {
+            if i.value() != 0 {
+                riscv_text.push_str(&format!("  j {}\n", label_true));
+            } else {
+                riscv_text.push_str(&format!("  j {}\n", label_false));
+            }
+        }
+        _ => {
+            let offset = env.get_frame_size() - env.get_offset(cond).unwrap();
+            generate_lw_with_any_offset(riscv_text, tmp1, "sp", tmp2, offset);
+            generate_bnez(riscv_text, tmp1, label_true);
+            generate_j(riscv_text, label_false); 
+        }
+    }
+}
+
+pub fn generate_jump(riscv_text: &mut String, env: &CodegenEnv, bb: BasicBlock) {
+    let label = &env.get_label(bb)[1..];
+    generate_j(riscv_text, label);
 }
 
 pub fn generate_return(riscv_text: &mut String, env: &CodegenEnv, ret: Value, dest: &str, tmp: &str) {

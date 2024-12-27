@@ -3,9 +3,8 @@ use super::CodegenError;
 use super::env::CodegenEnv;
 use koopa::ir::entities::ValueData;
 use koopa::ir::Value;
-use koopa::ir::{values::*, TypeKind};
+use koopa::ir::TypeKind;
 use koopa::ir::{FunctionData, Program, ValueKind};
-use core::alloc;
 use std::result::Result;
 
 pub trait GenerateAsm<'p> {
@@ -54,6 +53,8 @@ impl<'p> GenerateAsm<'p> for FunctionData {
         generate_addi_with_any_imm(riscv_text, "sp", "sp", "t0", -frame_offset);
 
         for (&bb, node) in self.layout().bbs() {
+            let label = &env.get_label(bb)[1..];
+            riscv_text.push_str(&format!("{}:\n", label));
             for &inst in node.insts().keys() {
                 inst.generate_riscv(riscv_text, env)?;
                 // let value_data = self.dfg().value(inst);
@@ -73,6 +74,12 @@ impl<'p> GenerateAsm<'p> for Value {
             ValueKind::Alloc(_) => {}
             ValueKind::Binary(binary) => {
                 generate_binary(riscv_text, env, binary.op(), binary.lhs(), binary.rhs(), *self, "t0", "t1", "t2", "t3");                
+            }
+            ValueKind::Branch(branch) => {
+                generate_branch(riscv_text, env, branch.cond(), branch.true_bb(), branch.false_bb(), "t0", "t1");
+            }
+            ValueKind::Jump(jump) => {
+                generate_jump(riscv_text, env, jump.target());
             }
             ValueKind::Load(load) => {
                 generate_load(riscv_text, env, load.src(), *self, "t0", "t1");

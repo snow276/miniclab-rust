@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use koopa::ir::entities::{Function, ValueData};
-use koopa::ir::{Program, Value};
+use koopa::ir::{BasicBlock, Program, Value};
 
 pub struct CodegenEnv<'p> {
     program: &'p Program,
@@ -46,6 +46,12 @@ impl<'p, 'f> CodegenEnv<'p> {
         let cur_func = self.cur_func.expect("No current function");
         let cur_func_data = self.program.func(cur_func);
         cur_func_data.dfg().value(value)
+    }
+
+    pub fn get_label(&self, bb: BasicBlock) -> &str {
+        let cur_func = self.cur_func.unwrap();
+        let cur_func_data = self.program.func(cur_func);
+        cur_func_data.dfg().bb(bb).name().as_ref().unwrap()
     }
 }
 

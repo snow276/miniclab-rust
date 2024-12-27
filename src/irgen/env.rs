@@ -13,11 +13,22 @@ pub struct IrgenEnv<'s> {
     sym_tab: Vec<Box<SymbolTable<'s>>>,
     branch_id: i32,
     exit_bb: Option<BasicBlock>,
+    and_id: i32,
+    or_id: i32,
 }
 
 impl<'s> IrgenEnv<'s> {
     pub fn new() -> Self {
-        Self { cur_func: None, cur_bb: None, cur_bb_returned: false, sym_tab: Vec::new(), branch_id: 0, exit_bb: None }
+        Self { 
+            cur_func: None, 
+            cur_bb: None, 
+            cur_bb_returned: false, 
+            sym_tab: Vec::new(), 
+            branch_id: 0, 
+            exit_bb: None,
+            and_id: 0,
+            or_id: 0,
+        }
     }
 
     pub fn get_cur_func(&self) -> Option<&Function> {
@@ -111,6 +122,18 @@ impl<'s> IrgenEnv<'s> {
         let branch_id = self.branch_id;
         self.branch_id += 1;
         branch_id
+    }
+
+    pub fn new_and_id(&mut self) -> i32 {
+        let and_id = self.and_id;
+        self.and_id += 1;
+        and_id
+    }
+
+    pub fn new_or_id(&mut self) -> i32 {
+        let or_id = self.or_id;
+        self.or_id += 1;
+        or_id
     }
 
     pub fn set_exit_bb(&mut self, bb: BasicBlock) {

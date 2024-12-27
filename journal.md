@@ -320,3 +320,165 @@ pub struct IrgenEnv<'s> {
 ```
 
 Lv5 只需要修改前端，不用修改后端。顺利通过！
+
+## Lv.6 `if` 语句
+
+本 level 需要实现处理 `if/else` 语句的功能。
+
+### 功能梳理
+
+#### 1. 语法/词法分析
+
+如何解析 `if/else` 时的二义性问题？
+
+在 [Wikipedia](https://en.wikipedia.org/wiki/Dangling_else) 上找到了这种解决方法（甚至把 `while` 语句的处理也涵盖了） ：
+
+```plaintext
+statement: open_statement
+         | closed_statement
+         ;
+
+open_statement: IF '(' expression ')' statement
+              | IF '(' expression ')' closed_statement ELSE open_statement
+              | WHILE '(' expression ')' open_statement
+              ;
+
+closed_statement: simple_statement
+                | IF '(' expression ')' closed_statement ELSE closed_statement
+                | WHILE '(' expression ')' closed_statement
+                ;
+
+simple_statement: ...
+                ;
+```
+
+基于这个思想修改 EBNF 如下（ `while` 语句的暂时等到下个 level 再做吧 ）：
+
+```plaintext
+// Stmt          ::= OpenStmt | ClosedStmt;
+// OpenStmt      ::= "if" "(" Exp ")" Stmt
+//                 | "if" "(" Exp ")" ClosedStmt "else" OpenStmt;
+// ClosedStmt    ::= SimpleStmt
+//                 | "if" "(" Exp ")" ClosedStmt "else" ClosedStmt;
+// SimpleStmt    ::= LVal "=" Exp ";"
+//                 | [Exp] ";"
+//                 | Block
+//                 | "return" [Exp] ";";
+```
+
+直观理解的话， `ClosedStmt` 表示的是一个已经闭合了的 `if/else` 或者一个非条件分支语句，而 `OpenStmt` 则表示未闭合的分支语句。
+
+#### 2. 基本块和控制转移指令
+
+这里好像分析起来真得用到上理论课的时候说的 SDT 的思想，看来理论课的知识也不是完全没用的。
+
+先讨论前端的生成方案（这应该也是本 level 的重点）。
+
+对于有 `if/else` 两个分支的语句，生成 IR 的流程如下：
+
+* 生成三个 `BasicBlock` 基本块（也可以说是标签），分别代表 `then` 分支、`else` 分支、`end`
+* 生成 `Exp` 的 IR，并生成 `br` 指令。`br` 指令的三个操作数为：计算出的 `Exp` 的值、`then` 分支、`else` 分支
+* 切换当前基本块到 `then` ，生成该分支内的语句的 IR。分支以 `jump end` 作为结尾。
+* 切换当前基本块到 `else` ，生成该分支内的语句的 IR。分支以 `jump end` 作为结尾。
+* 切换当前基本块到 `end` 。
+
+对于只有 `if` 一个分支的语句，则只要 `then` 和 `end` 两个基本块即可。其余的大致思路和上面相似。
+
+#### 3. 处理 `ret`
+
+之前的 level 中，直接在遇到 `SimpleStmt::return` 时生成 `ret` 语句。但是这样在有分支的情况下会出现问题。如果分支中有 `Return` 语句，那么这样的话就会在分支中生成 `ret` 语句，这会很难处理。
+
+作者的解决方案是：在函数的一开始就创建一个 `%exit` 基本块，这个基本块专门用来生成 `ret %ret` 语句，并且把这个 `%exit` 基本块直接放在 `IrgenEnv` 结构体中，作为全局环境的一部分。然后，如果在分支中，如果有 `Return` 语句，就把返回值加载到 `%ret` 中，然后直接  `jump %exit` 。还需要注意的是，如果一个分支基本块中已经有了 `Return` （即会在 IR 中生成 `jump %exit` 了），就不要再生成 `jump %end` 语句了，每个基本块最后只能有且仅有一个跳转指令。
+
+用这种策略之后，下面的 SysY 代码会被翻译成这样的 Koopa IR：
+
+SysY：
+
+```plaintext
+int main() {
+  int a = 1;
+  if (a) {
+    return a + 1;
+  } else {
+    return a + 2;
+  }
+  return a;
+}
+```
+
+对应的 Koopa IR：
+
+```plaintext
+fun @main(): i32 {
+%entry:
+  %ret = alloc i32
+  @a_1 = alloc i32
+  store 1, @a_1
+  %0 = load @a_1
+  br %0, %then_0, %else_0
+
+%then_0:
+  %1 = load @a_1
+  %2 = add %1, 1
+  store %2, %ret
+  jump %exit
+
+%else_0:
+  %3 = load @a_1
+  %4 = add %3, 2
+  store %4, %ret
+  jump %exit
+
+%end_0:
+  %5 = load @a_1
+  store %5, %ret
+  jump %exit
+
+%exit:
+  %6 = load %ret
+  ret %6
+}
+
+```
+
+#### 4. 处理短路求值
+
+针对 `or` 和 `and` 需要进行短路求值，这是通过类似分支的方法来做的。
+
+可以把 `or` 和 `and` 语句翻译成如下的分支形态。
+
+求 `lhs || rhs` 的值时，可以翻译成下面的模式：
+
+```plaintext
+  alloc %res
+  store (lhs == 0), %res
+  branch (lhs == 0), %or_rhs, %or_end
+
+%or_rhs:
+  store (rhs == 0), %res
+  jump %or_end
+
+%or_end:
+  load %res
+```
+
+求 `lhs && rhs` 的值时，可以翻译成下面的模式：
+
+```
+  alloc %res
+  store (lhs == 0), %res
+  branch (lhs == 0), %or_end, %or_rhs
+
+%or_rhs:
+  store (rhs == 0), %res
+  jump %or_end
+
+%or_end:
+  load %res
+```
+
+这种分支的情况应该比较简单，所以在处理这里的基本块时没有考虑会有 `Return` 语句的问题了（逻辑表达式里应该不会有返回值什么的吧……？）。在这里记录一下，万一以后被打脸了。
+
+### 其他
+
+最终还是决定给标签起名字的时候加全局编号（主要是分支语句有else有的没有，不人为设置编号的话没法让所有统一分支中的标签名字中有一样的编号），然后给变量起名字的时候就不要全局编号了（没必要）。

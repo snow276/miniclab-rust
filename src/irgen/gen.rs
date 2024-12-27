@@ -87,7 +87,7 @@ impl<'ast> GenerateKoopa<'ast> for VarDef {
         }
         let ty = self.b_type.generate_koopa(program, env)?;
         let alloc = env.new_value(program).alloc(ty);
-        env.dfg_mut(program).set_value_name(alloc, Some(format!("@{}_{}", self.ident, env.get_cur_scope_id())));
+        env.dfg_mut(program).set_value_name(alloc, Some(format!("@{}", self.ident)));
         env.new_inst(program).push_key_back(alloc).unwrap(); 
         env.new_symbol_var(&self.ident, alloc);   
 

@@ -11,14 +11,13 @@ pub struct IrgenEnv<'s> {
     cur_bb: Option<BasicBlock>,
     cur_bb_returned: bool,
     sym_tab: Vec<Box<SymbolTable<'s>>>,
-    cur_scope_id: i32,
     branch_id: i32,
     exit_bb: Option<BasicBlock>,
 }
 
 impl<'s> IrgenEnv<'s> {
     pub fn new() -> Self {
-        Self { cur_func: None, cur_bb: None, cur_bb_returned: false, sym_tab: Vec::new(), cur_scope_id: 0, branch_id: 0, exit_bb: None }
+        Self { cur_func: None, cur_bb: None, cur_bb_returned: false, sym_tab: Vec::new(), branch_id: 0, exit_bb: None }
     }
 
     pub fn get_cur_func(&self) -> Option<&Function> {
@@ -70,15 +69,10 @@ impl<'s> IrgenEnv<'s> {
 
     pub fn push_scope(&mut self) {
         self.sym_tab.push(Box::new(SymbolTable::new()));
-        self.cur_scope_id += 1;
     }
 
     pub fn pop_scope(&mut self) {
         self.sym_tab.pop();
-    }
-
-    pub fn get_cur_scope_id(&self) -> i32 {
-        self.cur_scope_id
     }
 
     pub fn new_symbol_const(&mut self, ident: &'s str, val: i32) {

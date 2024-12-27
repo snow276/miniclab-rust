@@ -69,10 +69,25 @@ BlockItem: BlockItem = {
 }
 
 Stmt: Stmt = {
-  <l_val: LVal> "=" <exp: Exp> ";" => Stmt::Assign(l_val, Box::new(exp)),
-  <exp: Exp?> ";" => Stmt::Exp(Box::new(exp)),
-  <block: Block> => Stmt::Block(Box::new(block)),
-  "return" <exp: Exp?> ";" => Stmt::Return(Box::new(exp)),
+  <open_stmt: OpenStmt> => Stmt::OpenStmt(<>),
+  <closed_stmt: ClosedStmt> => Stmt::ClosedStmt(<>),
+}
+
+OpenStmt: OpenStmt = {
+  "if" "(" <exp: Exp> ")" <stmt: Stmt> => OpenStmt::If(Box::new(exp), Box::new(stmt)),
+  "if" "(" <exp: Exp> ")" <then_stmt: ClosedStmt> "else" <else_stmt: OpenStmt> => OpenStmt::IfElse(Box::new(exp), Box::new(then_stmt), Box::new(else_stmt)),
+}
+
+ClosedStmt: ClosedStmt = {
+  <simple_stmt: SimpleStmt> => ClosedStmt::SimpleStmt(<>),
+  "if" "(" <exp: Exp> ")" <then_stmt: ClosedStmt> "else" <else_stmt: ClosedStmt> => ClosedStmt::IfElse(Box::new(exp), Box::new(then_stmt), Box::new(else_stmt)),
+}
+
+SimpleStmt: SimpleStmt = {
+  <l_val: LVal> "=" <exp: Exp> ";" => SimpleStmt::Assign(l_val, Box::new(exp)),
+  <exp: Exp?> ";" => SimpleStmt::Exp(Box::new(exp)),
+  <block: Block> => SimpleStmt::Block(Box::new(block)),
+  "return" <exp: Exp?> ";" => SimpleStmt::Return(Box::new(exp)),
 }
 
 Exp: Exp = <l_or_exp: LOrExp> => Exp { <> };

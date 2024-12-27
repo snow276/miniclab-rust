@@ -15,7 +15,12 @@
 
 // Block         ::= "{" {BlockItem} "}";
 // BlockItem     ::= Decl | Stmt;
-// Stmt          ::= LVal "=" Exp ";"
+// Stmt          ::= OpenStmt | ClosedStmt;
+// OpenStmt      ::= "if" "(" Exp ")" Stmt
+//                 | "if" "(" Exp ")" ClosedStmt "else" OpenStmt;
+// ClosedStmt    ::= SimpleStmt
+//                 | "if" "(" Exp ")" ClosedStmt "else" ClosedStmt;
+// SimpleStmt    ::= LVal "=" Exp ";"
 //                 | [Exp] ";"
 //                 | Block
 //                 | "return" [Exp] ";";
@@ -109,6 +114,24 @@ pub enum BlockItem {
 
 #[derive(Debug)]
 pub enum Stmt {
+    OpenStmt(OpenStmt),
+    ClosedStmt(ClosedStmt),
+}
+
+#[derive(Debug)]
+pub enum OpenStmt {
+    If(Box<Exp>, Box<Stmt>),
+    IfElse(Box<Exp>, Box<ClosedStmt>, Box<OpenStmt>),
+}
+
+#[derive(Debug)]
+pub enum ClosedStmt {
+    SimpleStmt(SimpleStmt),
+    IfElse(Box<Exp>, Box<ClosedStmt>, Box<ClosedStmt>),
+}
+
+#[derive(Debug)]
+pub enum SimpleStmt {
     Assign(LVal, Box<Exp>),
     Exp(Box<Option<Exp>>),
     Block(Box<Block>),

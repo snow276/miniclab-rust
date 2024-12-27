@@ -119,13 +119,13 @@ impl<'ast> GenerateKoopa<'ast> for FuncDef {
             params_ty, 
             ret_ty.clone()
         ));
-        let func_data = program.func_mut(func);
-
-        let entry = func_data.dfg_mut().new_bb().basic_block(Some("%entry".into()));
-
-        func_data.layout_mut().bbs_mut().extend([entry]);
-
         env.set_cur_func(func);
+
+        let entry = env.new_bb(program).basic_block(Some("%entry".into()));
+        let exit = env.new_bb(program).basic_block(Some("%exit".into()));
+        env.set_exit_bb(exit);
+
+        env.layout_mut(program).bbs_mut().extend([entry]);
         env.set_cur_bb(entry);
         env.push_scope();
 
@@ -136,6 +136,13 @@ impl<'ast> GenerateKoopa<'ast> for FuncDef {
 
         self.block.generate_koopa(program, env)?;
         env.pop_scope();
+
+        env.layout_mut(program).bbs_mut().extend([exit]);
+        env.set_cur_bb(exit);
+        let load = env.new_value(program).load(alloc_ret);
+        let ret = env.new_value(program).ret(Some(load));
+        env.new_inst(program).push_key_back(load).unwrap();
+        env.new_inst(program).push_key_back(ret).unwrap();
 
         Ok(())
     }
@@ -185,6 +192,132 @@ impl<'ast> GenerateKoopa<'ast> for Stmt {
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
+            Self::OpenStmt(open_stmt) => {
+                open_stmt.generate_koopa(program, env)
+            },
+            Self::ClosedStmt(closed_stmt) => {
+                closed_stmt.generate_koopa(program, env)
+            },
+        }
+    }
+}
+
+
+impl<'ast> GenerateKoopa<'ast> for OpenStmt {
+    type Out = ();
+
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+        match self {
+            Self::If(exp, stmt) => {
+                let bid = env.new_branch_id();
+                let then_bb = env.new_bb(program).basic_block(Some(format!("%then_{}", bid).into()));
+                let end_bb = env.new_bb(program).basic_block(Some(format!("%end_{}", bid).into()));
+
+                let cond = exp.generate_koopa(program, env)?;
+                let br = env.new_value(program).branch(cond, then_bb, end_bb);
+                env.new_inst(program).push_key_back(br).unwrap();
+
+                env.layout_mut(program).bbs_mut().extend([then_bb]);
+                env.set_cur_bb(then_bb);
+                env.set_cur_bb_returned(false);
+                stmt.generate_koopa(program, env)?;
+                if !env.is_cur_bb_returned() {
+                    let jump = env.new_value(program).jump(end_bb);
+                    env.new_inst(program).push_key_back(jump).unwrap();
+                }
+
+                env.layout_mut(program).bbs_mut().extend([end_bb]);
+                env.set_cur_bb(end_bb);
+                env.set_cur_bb_returned(false);
+                Ok(())
+            }
+            Self::IfElse(exp, then_stmt, else_stmt ) => {
+                let bid = env.new_branch_id();
+                let then_bb = env.new_bb(program).basic_block(Some(format!("%then_{}", bid).into()));
+                let else_bb = env.new_bb(program).basic_block(Some(format!("%else_{}", bid).into()));
+                let end_bb = env.new_bb(program).basic_block(Some(format!("%end_{}", bid).into()));
+
+                let cond = exp.generate_koopa(program, env)?;
+                let br = env.new_value(program).branch(cond, then_bb, else_bb);
+                env.new_inst(program).push_key_back(br).unwrap();
+                
+                env.layout_mut(program).bbs_mut().extend([then_bb]);
+                env.set_cur_bb(then_bb);
+                env.set_cur_bb_returned(false);
+                then_stmt.generate_koopa(program, env)?;
+                if !env.is_cur_bb_returned() {
+                    let jump = env.new_value(program).jump(end_bb);
+                    env.new_inst(program).push_key_back(jump).unwrap();
+                }
+
+                env.layout_mut(program).bbs_mut().extend([else_bb]);
+                env.set_cur_bb(else_bb);
+                env.set_cur_bb_returned(false);
+                else_stmt.generate_koopa(program, env)?;
+                if !env.is_cur_bb_returned() {
+                    let jump = env.new_value(program).jump(end_bb);
+                    env.new_inst(program).push_key_back(jump).unwrap();
+                }
+
+                env.layout_mut(program).bbs_mut().extend([end_bb]);
+                env.set_cur_bb(end_bb);
+                env.set_cur_bb_returned(false);
+                Ok(())
+            }
+        }
+    }
+}
+
+impl<'ast> GenerateKoopa<'ast> for ClosedStmt {
+    type Out = ();
+
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+        match self {
+            Self::SimpleStmt(simple_stmt) => {
+                simple_stmt.generate_koopa(program, env)
+            },
+            Self::IfElse(exp, then_stmt ,else_stmt ) => {
+                let bid = env.new_branch_id();
+                let then_bb = env.new_bb(program).basic_block(Some(format!("%then_{}", bid).into()));
+                let else_bb = env.new_bb(program).basic_block(Some(format!("%else_{}", bid).into()));
+                let end_bb = env.new_bb(program).basic_block(Some(format!("%end_{}", bid).into()));
+
+                let cond = exp.generate_koopa(program, env)?;
+                let br = env.new_value(program).branch(cond, then_bb, else_bb);
+                env.new_inst(program).push_key_back(br).unwrap();
+                
+                env.layout_mut(program).bbs_mut().extend([then_bb]);
+                env.set_cur_bb(then_bb);
+                env.set_cur_bb_returned(false);
+                then_stmt.generate_koopa(program, env)?;
+                if !env.is_cur_bb_returned() {
+                    let jump = env.new_value(program).jump(end_bb);
+                    env.new_inst(program).push_key_back(jump).unwrap();
+                }
+
+                env.layout_mut(program).bbs_mut().extend([else_bb]);
+                env.set_cur_bb(else_bb);
+                env.set_cur_bb_returned(false);
+                else_stmt.generate_koopa(program, env)?;
+                if !env.is_cur_bb_returned() {
+                    let jump = env.new_value(program).jump(end_bb);
+                    env.new_inst(program).push_key_back(jump).unwrap();
+                }
+
+                env.layout_mut(program).bbs_mut().extend([end_bb]);
+                env.set_cur_bb(end_bb);
+                env.set_cur_bb_returned(false);
+                Ok(())
+            }
+        }
+    }
+}
+
+impl<'ast> GenerateKoopa<'ast> for SimpleStmt {
+    type Out = ();
+
+    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+        match self {
             Self::Assign(l_val, exp) => {
                 let val = exp.generate_koopa(program, env)?;
                 if let Some(symbol_info) = env.get_symbol(&l_val.ident) {
@@ -225,10 +358,8 @@ impl<'ast> GenerateKoopa<'ast> for Stmt {
                     },
                     None => {}
                 }
-                let load = env.new_value(program).load(ret_val);
-                let ret = env.new_value(program).ret(Some(load));
-                env.new_inst(program).push_key_back(load).unwrap();
-                env.new_inst(program).push_key_back(ret).unwrap();
+                let jump = env.new_value(program).jump(*env.get_exit_bb().unwrap());
+                env.new_inst(program).push_key_back(jump).unwrap();
                 env.set_cur_bb_returned(true);
             },
         }
@@ -447,16 +578,37 @@ impl<'ast> GenerateKoopa<'ast> for LAndExp {
                 eq_exp.generate_koopa(program, env)
             },
             Self::And(l_and_exp, eq_exp) => {
+                let rhs_bb = env.new_bb(program).basic_block(Some("%and_rhs".into()));
+                let end_bb = env.new_bb(program).basic_block(Some("%and_end".into()));
+
+                let alloc_res = env.new_value(program).alloc(Type::get_i32());
+                env.new_inst(program).push_key_back(alloc_res).unwrap();
+
                 let lhs = l_and_exp.generate_koopa(program, env)?;
-                let rhs = eq_exp.generate_koopa(program, env)?;
                 let zero = env.new_value(program).integer(0);
                 let lhs_ne_zero = env.new_value(program).binary(BinaryOp::NotEq, lhs, zero);
-                let rhs_ne_zero = env.new_value(program).binary(BinaryOp::NotEq, rhs, zero);
-                let value = env.new_value(program).binary(BinaryOp::And, lhs_ne_zero, rhs_ne_zero);
                 env.new_inst(program).push_key_back(lhs_ne_zero).unwrap();
+                let store = env.new_value(program).store(lhs_ne_zero, alloc_res);
+                env.new_inst(program).push_key_back(store).unwrap();
+                let br = env.new_value(program).branch(lhs_ne_zero, rhs_bb, end_bb);
+                env.new_inst(program).push_key_back(br).unwrap();
+
+                env.layout_mut(program).bbs_mut().extend([rhs_bb]);
+                env.set_cur_bb(rhs_bb);
+                let rhs = eq_exp.generate_koopa(program, env)?;
+                let zero = env.new_value(program).integer(0);
+                let rhs_ne_zero = env.new_value(program).binary(BinaryOp::NotEq, rhs, zero);
                 env.new_inst(program).push_key_back(rhs_ne_zero).unwrap();
-                env.new_inst(program).push_key_back(value).unwrap();
-                Ok(value)
+                let store = env.new_value(program).store(rhs_ne_zero, alloc_res);
+                env.new_inst(program).push_key_back(store).unwrap();
+                let jump = env.new_value(program).jump(end_bb);
+                env.new_inst(program).push_key_back(jump).unwrap();
+
+                env.layout_mut(program).bbs_mut().extend([end_bb]);
+                env.set_cur_bb(end_bb);
+                let load = env.new_value(program).load(alloc_res);
+                env.new_inst(program).push_key_back(load).unwrap();
+                Ok(load)
             }
         }
     }
@@ -471,16 +623,37 @@ impl<'ast> GenerateKoopa<'ast> for LOrExp {
                 Ok(l_and_exp.generate_koopa(program, env)?)
             }
             Self::Or(l_or_exp, l_and_exp) => {
+                let rhs_bb = env.new_bb(program).basic_block(Some("%or_rhs".into()));
+                let end_bb = env.new_bb(program).basic_block(Some("%or_end".into()));
+                
+                let alloc_res = env.new_value(program).alloc(Type::get_i32());
+                env.new_inst(program).push_key_back(alloc_res).unwrap();
+
                 let lhs = l_or_exp.generate_koopa(program, env)?;
-                let rhs = l_and_exp.generate_koopa(program, env)?;
                 let zero = env.new_value(program).integer(0);
                 let lhs_ne_zero = env.new_value(program).binary(BinaryOp::NotEq, lhs, zero);
-                let rhs_ne_zero = env.new_value(program).binary(BinaryOp::NotEq, rhs, zero);
-                let value = env.new_value(program).binary(BinaryOp::Or, lhs_ne_zero, rhs_ne_zero);
                 env.new_inst(program).push_key_back(lhs_ne_zero).unwrap();
+                let store = env.new_value(program).store(lhs_ne_zero, alloc_res);
+                env.new_inst(program).push_key_back(store).unwrap();
+                let br = env.new_value(program).branch(lhs_ne_zero, end_bb, rhs_bb);
+                env.new_inst(program).push_key_back(br).unwrap();
+
+                env.layout_mut(program).bbs_mut().extend([rhs_bb]);
+                env.set_cur_bb(rhs_bb);
+                let rhs = l_and_exp.generate_koopa(program, env)?;
+                let zero = env.new_value(program).integer(0);
+                let rhs_ne_zero = env.new_value(program).binary(BinaryOp::NotEq, rhs, zero);
                 env.new_inst(program).push_key_back(rhs_ne_zero).unwrap();
-                env.new_inst(program).push_key_back(value).unwrap();
-                Ok(value)
+                let store = env.new_value(program).store(rhs_ne_zero, alloc_res);
+                env.new_inst(program).push_key_back(store).unwrap();
+                let jump = env.new_value(program).jump(end_bb);
+                env.new_inst(program).push_key_back(jump).unwrap();
+
+                env.layout_mut(program).bbs_mut().extend([end_bb]);
+                env.set_cur_bb(end_bb);
+                let load = env.new_value(program).load(alloc_res);
+                env.new_inst(program).push_key_back(load).unwrap();
+                Ok(load)
             }
         }
     }

@@ -1,9 +1,9 @@
 use std::io::Cursor;
 
-use koopa::ir::builder::LocalBuilder;
+use koopa::ir::builder::{BlockBuilder, LocalBuilder};
 use koopa::ir::dfg::DataFlowGraph;
 use koopa::ir::entities::Function;
-use koopa::ir::layout::InstList;
+use koopa::ir::layout::{InstList, Layout};
 use koopa::ir::{BasicBlock, Program, Value};
 
 use super::symbol::{SymbolInfo, SymbolTable};
@@ -14,11 +14,13 @@ pub struct IrgenEnv<'s> {
     cur_bb_returned: bool,
     sym_tab: Vec<Box<SymbolTable<'s>>>,
     cur_scope_id: i32,
+    branch_id: i32,
+    exit_bb: Option<BasicBlock>,
 }
 
 impl<'s> IrgenEnv<'s> {
     pub fn new() -> Self {
-        Self { cur_func: None, cur_bb: None, cur_bb_returned: false, sym_tab: Vec::new(), cur_scope_id: 0 }
+        Self { cur_func: None, cur_bb: None, cur_bb_returned: false, sym_tab: Vec::new(), cur_scope_id: 0, branch_id: 0, exit_bb: None }
     }
 
     pub fn get_cur_func(&self) -> Option<&Function> {
@@ -43,10 +45,22 @@ impl<'s> IrgenEnv<'s> {
         cur_func_data.dfg_mut().new_value()
     }
 
+    pub fn new_bb(&self, program: &'s mut Program) -> BlockBuilder<'s> {
+        let cur_func = self.cur_func.unwrap();
+        let cur_func_data = program.func_mut(cur_func);
+        cur_func_data.dfg_mut().new_bb()
+    }
+
     pub fn dfg_mut(&self, program: &'s mut Program) -> &'s mut DataFlowGraph {
         let cur_func = self.cur_func.unwrap();
         let cur_func_data = program.func_mut(cur_func);
         cur_func_data.dfg_mut()
+    }
+
+    pub fn layout_mut(&self, program: &'s mut Program) -> &'s mut Layout {
+        let cur_func = self.cur_func.unwrap();
+        let cur_func_data = program.func_mut(cur_func);
+        cur_func_data.layout_mut()
     }
 
     pub fn new_inst(&self, program: &'s mut Program) -> &'s mut InstList {
@@ -99,5 +113,19 @@ impl<'s> IrgenEnv<'s> {
 
     pub fn is_cur_bb_returned(&self) -> bool {
         self.cur_bb_returned
+    }
+
+    pub fn new_branch_id(&mut self) -> i32 {
+        let branch_id = self.branch_id;
+        self.branch_id += 1;
+        branch_id
+    }
+
+    pub fn set_exit_bb(&mut self, bb: BasicBlock) {
+        self.exit_bb = Some(bb);
+    }
+
+    pub fn get_exit_bb(&self) -> Option<&BasicBlock> {
+        self.exit_bb.as_ref()
     }
 }

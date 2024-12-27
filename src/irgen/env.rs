@@ -1,5 +1,3 @@
-use std::io::Cursor;
-
 use koopa::ir::builder::{BlockBuilder, LocalBuilder};
 use koopa::ir::dfg::DataFlowGraph;
 use koopa::ir::entities::Function;

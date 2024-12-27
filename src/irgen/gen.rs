@@ -127,6 +127,7 @@ impl<'ast> GenerateKoopa<'ast> for FuncDef {
 
         env.layout_mut(program).bbs_mut().extend([entry]);
         env.set_cur_bb(entry);
+        env.set_cur_bb_returned(false);
         env.push_scope();
 
         let alloc_ret = env.new_value(program).alloc(ret_ty);
@@ -136,6 +137,11 @@ impl<'ast> GenerateKoopa<'ast> for FuncDef {
 
         self.block.generate_koopa(program, env)?;
         env.pop_scope();
+
+        if !env.is_cur_bb_returned() {
+            let jump = env.new_value(program).jump(exit);
+            env.new_inst(program).push_key_back(jump).unwrap();
+        }
 
         env.layout_mut(program).bbs_mut().extend([exit]);
         env.set_cur_bb(exit);

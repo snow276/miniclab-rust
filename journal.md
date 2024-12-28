@@ -571,3 +571,124 @@ Lv6 的后端相比之前的后端多出来的只有  `jump` 和 `br` 两类 IR 
 > 感想：最开始设计一个数据结构时，总是希望它能越好看越好、越简洁越好。可是当它里面的东西越来越多越来越丑之后……再往里面加新东西时，心里就没有什么波澜了。
 
 好耶！至此为止，Lv6 的前后端的所有测试全部通过了！
+
+## Lv.7 `while` 语句
+
+本 level 需要实现处理 `while` 语句的功能。
+
+本 level 只需要改前端，后端不用动。
+
+### 功能梳理
+
+#### 1. 语法/词法分析
+
+在语法上处理 `while` 的思想在本文档的 Lv6 前端部分已经写出来了。这里直接记录一下按照此思想修改的 EBNF。
+
+```plaintext
+// Stmt          ::= OpenStmt | ClosedStmt;
+// OpenStmt      ::= "if" "(" Exp ")" Stmt
+//                 | "if" "(" Exp ")" ClosedStmt "else" OpenStmt;
+//                 | "while" "(" Exp ")" OpenStmt;
+// ClosedStmt    ::= SimpleStmt
+//                 | "if" "(" Exp ")" ClosedStmt "else" ClosedStmt;
+//                 | "while" "(" Exp ")" ClosedStmt;
+// SimpleStmt    ::= LVal "=" Exp ";"
+//                 | [Exp] ";"
+//                 | Block
+//                 | "break" ";"
+//                 | "continue" ";"
+//                 | "return" [Exp] ";";
+```
+
+#### 2. 处理 `while` 的基本快和控制转移
+
+对于 `while` 语句，用下面的方式处理：
+
+* 生成三个基本块 `while_cond` 、 `while_body` 和 `while_end` 。
+* 在进入 `while_cond` 基本块之前，先在当前基本块中生成一句跳转到 `while_cond` 的跳转指令。
+* `while_cond` 进行条件判断，如果条件为真，跳转到 `while_body` ；如果条件为假，跳转到 `while_end` 。
+* `while_body` 生成循环体中的语句，并在最后无条件跳转至 `while_cond` 。
+* `while_end` 什么事也不用干。
+
+#### 3. 处理 `break` 和 `continue` 语句
+
+从行为上看，`break` 就是要生成一条跳转到 `while_end` 的跳转指令，`continue` 就是要生产一条跳转到 `while_cond` 的跳转指令。
+
+在设计处理思路之前，作者意识到有如下几个需要注意的地方：
+
+1. `while` 循环可能是嵌套的，而 `break` 和 `continue` 语句应该作用于最近的一个 `while` 循环。
+2. `break` 和 `continue` 语句不一定在 `while_body` 基本块中，比如如果 `while` 中有一个 `if` 语句，而 `break` 在这个 `if` 的某个分支中，那么 `break` 在 IR 中其实就不在 `while_body` 基本块里而是在 `if` 分支的基本块里了。
+
+考虑到以上两点，作者想到了一种简单的处理方案：在全局环境 `IrgenEnv` 中新增  `cur_while_cond: Option<BasicBlock> `和 `cur_while_end: Option<BasicBlock>` 两个成员变量，表示当前“最近的 `while` 循环”的 `while_cond` 和 `while_end` 基本块。然后，只需要在每次处理 `while` 语句时，先保存这两个量的旧值，然后把这两个量的值设置为当前 `while` 创建出的相应基本块，最后再把这两个量的值恢复成旧值就行。
+
+在 `OpenStmt` 和 `ClosedStmt` 的 `While` 分支中，与这部分相关的代码如下：
+
+```rust
+            Self::While(exp, stmt) => {
+                let old_while_cond_bb = env.get_cur_while_cond_bb();
+                let old_while_end_bb = env.get_cur_while_end_bb();
+
+                let wid = env.new_while_id();
+                let cond_bb = env.new_bb(program).basic_block(Some(format!("%while_cond_{}", wid).into()));
+                let body_bb = env.new_bb(program).basic_block(Some(format!("%while_body_{}", wid).into()));
+                let end_bb = env.new_bb(program).basic_block(Some(format!("%while_end_{}", wid).into()));
+		// ...
+
+                env.set_cur_while_cond_bb(Some(cond_bb));
+                env.set_cur_while_end_bb(Some(end_bb));
+
+		// ...
+
+                env.set_cur_while_cond_bb(old_while_cond_bb);
+                env.set_cur_while_end_bb(old_while_end_bb);
+                Ok(())
+            }
+```
+
+在 `SimpleStmt` 的 `Break` 和 `Continue` 分支中，只需要用以下简单的方法生成相应的跳转语句即可。（这样的设计顺便还能进行错误处理，能够报出 `break` 与 `continue` 语句不在循环内部的错误，非常好！）
+
+```rust
+            Self::Break => {
+                if let Some(while_end_bb) = env.get_cur_while_end_bb() {
+                    let jump = env.new_value(program).jump(while_end_bb);
+                    env.new_inst(program).push_key_back(jump).unwrap();
+                    env.set_cur_bb_returned(true);
+                } else {
+                    return Err(IrgenError::BreakOutsideLoop);
+                }
+            },
+            Self::Continue => {
+                if let Some(while_cond_bb) = env.get_cur_while_cond_bb() {
+                    let jump = env.new_value(program).jump(while_cond_bb);
+                    env.new_inst(program).push_key_back(jump).unwrap();
+                    env.set_cur_bb_returned(true);
+                } else {
+                    return Err(IrgenError::ContinueOutsideLoop);
+                }
+            },
+```
+
+在此还想顺便谈谈 `IrgenEnv` 的 `cur_bb_returned: bool` 这个成员变量。最初加上这个成员变量是为了应付 Lv4 的隐藏测试样例 `multiple_returns` ，当时为了判断是否已经出现过 `Return` 语句而把这个成员变量加到了全局环境中，没想到后面居然这么有用。
+
+在 Koopa IR 中规定，每个基本块都有且仅有一条控制转移指令（ `br` 或 `jump` 或 `ret` ），并且这个控制转移指令一定是基本块的最后一条指令。
+
+在完成本 level 时，我发现这个 `cur_bb_returned` 的意义可以进行扩展，不仅用于表示当前基本块是否已经存在了 `Return` 语句，而是直接表示当前基本块是否已经存在了控制转移语句。这样的话，就可以把控制转移相关的逻辑给统一起来。比方说，在处理完 `break` 和 `continue` 语句后，因为处理这些语句已经给当前基本块加上了控制转移语句，所以就可以把 `cur_bb_returned` 设计成 `true` 。而在基本块的生成逻辑中（即处理 `if` 和 `while` 的逻辑中），都可以用形如下面的代码来给还没有生成控制转移语句的基本块加上符合预期行为的控制转移指令（比如下面的例子就是给 `while_body` 的最后加上一句跳转到 `while_cond` 的跳转语句）。
+
+```rust
+                env.layout_mut(program).bbs_mut().extend([body_bb]);
+                env.set_cur_bb(body_bb);
+                env.set_cur_bb_returned(false);
+                stmt.generate_koopa(program, env)?;
+                if !env.is_cur_bb_returned() {
+                    let jump = env.new_value(program).jump(cond_bb);
+                    env.new_inst(program).push_key_back(jump).unwrap();
+                }
+```
+
+所以说，做完 Lv7，作者觉得 `cur_bb_returned` 这个变量名已经不太合适了，应该改成 `cur_bb_control_transferred` 或者 `cur_bb_ended` 才对）。
+
+另一点很奇妙的是，虽然基本块可能有很多个，但是实际编程时只要用这一个 `bool` 就足够应付所有的基本块了。这是因为 Koopa IR 生成基本块的过程是线性的，当一个基本块遇到控制转移语句结束了之后，就再也不会用到这个基本块了，一定会进入一个新的基本块，所以在生成不同基本块的过程中复用这一个 `bool` 是完全可以的。
+
+### 其他
+
+用作者的方法生成出来的 `while` 的 IR 表示和 Lv7.2 lab 文档中助教写的并不太一样，但作者实在没想出来助教那样的写法是怎么弄出来的，不管了。

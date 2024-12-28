@@ -270,6 +270,32 @@ impl<'ast> GenerateKoopa<'ast> for OpenStmt {
                 env.set_cur_bb_returned(false);
                 Ok(())
             }
+            Self::While(exp, stmt) => {
+                let wid = env.new_while_id();
+                let cond_bb = env.new_bb(program).basic_block(Some(format!("%while_cond_{}", wid).into()));
+                let body_bb = env.new_bb(program).basic_block(Some(format!("%while_body_{}", wid).into()));
+                let end_bb = env.new_bb(program).basic_block(Some(format!("%while_end_{}", wid).into()));
+
+                env.layout_mut(program).bbs_mut().extend([cond_bb]);
+                env.set_cur_bb(cond_bb);
+                let cond = exp.generate_koopa(program, env)?;
+                let br = env.new_value(program).branch(cond, body_bb, end_bb);
+                env.new_inst(program).push_key_back(br).unwrap();
+
+                env.layout_mut(program).bbs_mut().extend([body_bb]);
+                env.set_cur_bb(body_bb);
+                env.set_cur_bb_returned(false);
+                stmt.generate_koopa(program, env)?;
+                if !env.is_cur_bb_returned() {
+                    let jump = env.new_value(program).jump(cond_bb);
+                    env.new_inst(program).push_key_back(jump).unwrap();
+                }
+
+                env.layout_mut(program).bbs_mut().extend([end_bb]);
+                env.set_cur_bb(end_bb);
+                env.set_cur_bb_returned(false);
+                Ok(())
+            }
         }
     }
 }
@@ -307,6 +333,32 @@ impl<'ast> GenerateKoopa<'ast> for ClosedStmt {
                 else_stmt.generate_koopa(program, env)?;
                 if !env.is_cur_bb_returned() {
                     let jump = env.new_value(program).jump(end_bb);
+                    env.new_inst(program).push_key_back(jump).unwrap();
+                }
+
+                env.layout_mut(program).bbs_mut().extend([end_bb]);
+                env.set_cur_bb(end_bb);
+                env.set_cur_bb_returned(false);
+                Ok(())
+            },
+            Self::While(exp, stmt) => {
+                let wid = env.new_while_id();
+                let cond_bb = env.new_bb(program).basic_block(Some(format!("%while_cond_{}", wid).into()));
+                let body_bb = env.new_bb(program).basic_block(Some(format!("%while_body_{}", wid).into()));
+                let end_bb = env.new_bb(program).basic_block(Some(format!("%while_end_{}", wid).into()));
+
+                env.layout_mut(program).bbs_mut().extend([cond_bb]);
+                env.set_cur_bb(cond_bb);
+                let cond = exp.generate_koopa(program, env)?;
+                let br = env.new_value(program).branch(cond, body_bb, end_bb);
+                env.new_inst(program).push_key_back(br).unwrap();
+
+                env.layout_mut(program).bbs_mut().extend([body_bb]);
+                env.set_cur_bb(body_bb);
+                env.set_cur_bb_returned(false);
+                stmt.generate_koopa(program, env)?;
+                if !env.is_cur_bb_returned() {
+                    let jump = env.new_value(program).jump(cond_bb);
                     env.new_inst(program).push_key_back(jump).unwrap();
                 }
 

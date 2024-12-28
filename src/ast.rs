@@ -18,11 +18,15 @@
 // Stmt          ::= OpenStmt | ClosedStmt;
 // OpenStmt      ::= "if" "(" Exp ")" Stmt
 //                 | "if" "(" Exp ")" ClosedStmt "else" OpenStmt;
+//                 | "while" "(" Exp ")" OpenStmt;
 // ClosedStmt    ::= SimpleStmt
 //                 | "if" "(" Exp ")" ClosedStmt "else" ClosedStmt;
+//                 | "while" "(" Exp ")" ClosedStmt;
 // SimpleStmt    ::= LVal "=" Exp ";"
 //                 | [Exp] ";"
 //                 | Block
+//                 | "break" ";"
+//                 | "continue" ";"
 //                 | "return" [Exp] ";";
 
 // Exp           ::= LOrExp;
@@ -122,12 +126,14 @@ pub enum Stmt {
 pub enum OpenStmt {
     If(Box<Exp>, Box<Stmt>),
     IfElse(Box<Exp>, Box<ClosedStmt>, Box<OpenStmt>),
+    While(Box<Exp>, Box<OpenStmt>),
 }
 
 #[derive(Debug)]
 pub enum ClosedStmt {
     SimpleStmt(SimpleStmt),
     IfElse(Box<Exp>, Box<ClosedStmt>, Box<ClosedStmt>),
+    While(Box<Exp>, Box<ClosedStmt>),
 }
 
 #[derive(Debug)]
@@ -135,6 +141,8 @@ pub enum SimpleStmt {
     Assign(LVal, Box<Exp>),
     Exp(Box<Option<Exp>>),
     Block(Box<Block>),
+    // Break,
+    // Continue,
     Return(Box<Option<Exp>>),
 }
 

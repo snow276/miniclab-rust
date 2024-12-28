@@ -15,6 +15,7 @@ pub struct IrgenEnv<'s> {
     exit_bb: Option<BasicBlock>,
     and_id: i32,
     or_id: i32,
+    while_id: i32,
 }
 
 impl<'s> IrgenEnv<'s> {
@@ -28,6 +29,7 @@ impl<'s> IrgenEnv<'s> {
             exit_bb: None,
             and_id: 0,
             or_id: 0,
+            while_id: 0,
         }
     }
 
@@ -134,6 +136,12 @@ impl<'s> IrgenEnv<'s> {
         let or_id = self.or_id;
         self.or_id += 1;
         or_id
+    }
+
+    pub fn new_while_id(&mut self) -> i32 {
+        let while_id = self.while_id;
+        self.while_id += 1;
+        while_id
     }
 
     pub fn set_exit_bb(&mut self, bb: BasicBlock) {

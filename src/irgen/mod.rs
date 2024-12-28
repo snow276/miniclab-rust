@@ -23,6 +23,8 @@ pub enum IrgenError {
     SymbolUndeclared,
     AssignToConst,
     InitializeConstWithVariable,
+    BreakOutsideLoop,
+    ContinueOutsideLoop,
 }
 
 impl fmt::Display for IrgenError {
@@ -33,6 +35,8 @@ impl fmt::Display for IrgenError {
             Self::SymbolUndeclared => write!(f, "Symbol undeclared"),
             Self::AssignToConst => write!(f, "Assigning to a const symbol"),
             Self::InitializeConstWithVariable => write!(f, "Initializing a const symbol with a variable"),
+            Self::BreakOutsideLoop => write!(f, "Break statement outside loop"),
+            Self::ContinueOutsideLoop => write!(f, "Continue statement outside loop"),
         }
     }
 }

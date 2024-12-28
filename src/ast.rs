@@ -141,8 +141,8 @@ pub enum SimpleStmt {
     Assign(LVal, Box<Exp>),
     Exp(Box<Option<Exp>>),
     Block(Box<Block>),
-    // Break,
-    // Continue,
+    Break,
+    Continue,
     Return(Box<Option<Exp>>),
 }
 

@@ -89,8 +89,8 @@ SimpleStmt: SimpleStmt = {
   <l_val: LVal> "=" <exp: Exp> ";" => SimpleStmt::Assign(l_val, Box::new(exp)),
   <exp: Exp?> ";" => SimpleStmt::Exp(Box::new(exp)),
   <block: Block> => SimpleStmt::Block(Box::new(block)),
-  // "break" ";" => SimpleStmt::Break,
-  // "continue" ";" => SimpleStmt::Continue,
+  "break" ";" => SimpleStmt::Break,
+  "continue" ";" => SimpleStmt::Continue,
   "return" <exp: Exp?> ";" => SimpleStmt::Return(Box::new(exp)),
 }
 

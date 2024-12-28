@@ -1,5 +1,5 @@
 use super::{env::IrgenEnv, eval::Evaluate, symbol::SymbolInfo, IrgenError};
-use crate::ast::*;
+use crate::{ast::*, codegen};
 use koopa::ir::{builder::{BasicBlockBuilder, LocalInstBuilder, ValueBuilder}, BinaryOp, FunctionData, Program, Type, Value};
 use std::result::Result;
 
@@ -271,10 +271,18 @@ impl<'ast> GenerateKoopa<'ast> for OpenStmt {
                 Ok(())
             }
             Self::While(exp, stmt) => {
+                let old_while_cond_bb = env.get_cur_while_cond_bb();
+                let old_while_end_bb = env.get_cur_while_end_bb();
+
                 let wid = env.new_while_id();
                 let cond_bb = env.new_bb(program).basic_block(Some(format!("%while_cond_{}", wid).into()));
                 let body_bb = env.new_bb(program).basic_block(Some(format!("%while_body_{}", wid).into()));
                 let end_bb = env.new_bb(program).basic_block(Some(format!("%while_end_{}", wid).into()));
+                let jump = env.new_value(program).jump(cond_bb);
+                env.new_inst(program).push_key_back(jump).unwrap();
+
+                env.set_cur_while_cond_bb(Some(cond_bb));
+                env.set_cur_while_end_bb(Some(end_bb));
 
                 env.layout_mut(program).bbs_mut().extend([cond_bb]);
                 env.set_cur_bb(cond_bb);
@@ -294,6 +302,9 @@ impl<'ast> GenerateKoopa<'ast> for OpenStmt {
                 env.layout_mut(program).bbs_mut().extend([end_bb]);
                 env.set_cur_bb(end_bb);
                 env.set_cur_bb_returned(false);
+
+                env.set_cur_while_cond_bb(old_while_cond_bb);
+                env.set_cur_while_end_bb(old_while_end_bb);
                 Ok(())
             }
         }
@@ -342,10 +353,18 @@ impl<'ast> GenerateKoopa<'ast> for ClosedStmt {
                 Ok(())
             },
             Self::While(exp, stmt) => {
+                let old_while_cond_bb = env.get_cur_while_cond_bb();
+                let old_while_end_bb = env.get_cur_while_end_bb();
+
                 let wid = env.new_while_id();
                 let cond_bb = env.new_bb(program).basic_block(Some(format!("%while_cond_{}", wid).into()));
                 let body_bb = env.new_bb(program).basic_block(Some(format!("%while_body_{}", wid).into()));
                 let end_bb = env.new_bb(program).basic_block(Some(format!("%while_end_{}", wid).into()));
+                let jump = env.new_value(program).jump(cond_bb);
+                env.new_inst(program).push_key_back(jump).unwrap();
+
+                env.set_cur_while_cond_bb(Some(cond_bb));
+                env.set_cur_while_end_bb(Some(end_bb));
 
                 env.layout_mut(program).bbs_mut().extend([cond_bb]);
                 env.set_cur_bb(cond_bb);
@@ -365,6 +384,9 @@ impl<'ast> GenerateKoopa<'ast> for ClosedStmt {
                 env.layout_mut(program).bbs_mut().extend([end_bb]);
                 env.set_cur_bb(end_bb);
                 env.set_cur_bb_returned(false);
+
+                env.set_cur_while_cond_bb(old_while_cond_bb);
+                env.set_cur_while_end_bb(old_while_end_bb);
                 Ok(())
             }
         }
@@ -401,6 +423,24 @@ impl<'ast> GenerateKoopa<'ast> for SimpleStmt {
                 env.push_scope();
                 block.generate_koopa(program, env)?;
                 env.pop_scope();
+            },
+            Self::Break => {
+                if let Some(while_end_bb) = env.get_cur_while_end_bb() {
+                    let jump = env.new_value(program).jump(while_end_bb);
+                    env.new_inst(program).push_key_back(jump).unwrap();
+                    env.set_cur_bb_returned(true);
+                } else {
+                    return Err(IrgenError::BreakOutsideLoop);
+                }
+            },
+            Self::Continue => {
+                if let Some(while_cond_bb) = env.get_cur_while_cond_bb() {
+                    let jump = env.new_value(program).jump(while_cond_bb);
+                    env.new_inst(program).push_key_back(jump).unwrap();
+                    env.set_cur_bb_returned(true);
+                } else {
+                    return Err(IrgenError::ContinueOutsideLoop);
+                }
             },
             Self::Return(exp) => {
                 let ret_val = env.get_symbol("%ret").unwrap();

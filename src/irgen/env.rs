@@ -16,6 +16,8 @@ pub struct IrgenEnv<'s> {
     and_id: i32,
     or_id: i32,
     while_id: i32,
+    cur_while_cond_bb: Option<BasicBlock>,
+    cur_while_end_bb: Option<BasicBlock>,
 }
 
 impl<'s> IrgenEnv<'s> {
@@ -30,6 +32,8 @@ impl<'s> IrgenEnv<'s> {
             and_id: 0,
             or_id: 0,
             while_id: 0,
+            cur_while_cond_bb: None,
+            cur_while_end_bb: None,
         }
     }
 
@@ -150,5 +154,21 @@ impl<'s> IrgenEnv<'s> {
 
     pub fn get_exit_bb(&self) -> Option<&BasicBlock> {
         self.exit_bb.as_ref()
+    }
+
+    pub fn set_cur_while_cond_bb(&mut self, bb: Option<BasicBlock>) {
+        self.cur_while_cond_bb = bb;
+    }
+
+    pub fn get_cur_while_cond_bb(&self) -> Option<BasicBlock> {
+        self.cur_while_cond_bb
+    }
+
+    pub fn set_cur_while_end_bb(&mut self, bb: Option<BasicBlock>) {
+        self.cur_while_end_bb = bb;
+    }
+
+    pub fn get_cur_while_end_bb(&self) -> Option<BasicBlock> {
+        self.cur_while_end_bb
     }
 }

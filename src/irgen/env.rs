@@ -39,10 +39,6 @@ impl<'s> IrgenEnv<'s> {
         }
     }
 
-    pub fn get_cur_func(&self) -> Option<&Function> {
-        self.cur_func.as_ref()
-    }
-
     pub fn set_cur_func(&mut self, func: Function) {
         self.cur_func = Some(func);
     }
@@ -53,10 +49,6 @@ impl<'s> IrgenEnv<'s> {
 
     pub fn set_cur_func_type(&mut self, ty: Type) {
         self.cur_func_type = Some(ty);
-    }
-
-    pub fn get_cur_bb(&self) -> Option<&BasicBlock> {
-        self.cur_bb.as_ref()
     }
 
     pub fn set_cur_bb(&mut self, bb: BasicBlock) {

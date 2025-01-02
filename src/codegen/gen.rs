@@ -1,7 +1,6 @@
 use super::asmutil::*;
 use super::CodegenError;
 use super::env::CodegenEnv;
-use koopa::ir::entities::ValueData;
 use koopa::ir::Value;
 use koopa::ir::TypeKind;
 use koopa::ir::{FunctionData, Program, ValueKind};
@@ -35,7 +34,7 @@ impl<'p> GenerateAsm<'p> for FunctionData {
         riscv_text.push_str(&format!("{}:\n", func_name));
 
         let mut frame_offset= 0;
-        for (&bb, node) in self.layout().bbs() {
+        for (&_bb, node) in self.layout().bbs() {
             for &inst in node.insts().keys() {
                 let value_data = self.dfg().value(inst);
                 match value_data.ty().kind() {

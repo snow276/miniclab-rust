@@ -1,6 +1,6 @@
 use super::{env::IrgenEnv, eval::Evaluate, exp_type::ExpType, symbol::SymbolInfo, IrgenError};
 use crate::ast::*;
-use koopa::ir::{builder::{BasicBlockBuilder, LocalInstBuilder, ValueBuilder}, BinaryOp, FunctionData, Program, Type, TypeKind, Value};
+use koopa::ir::{builder::{BasicBlockBuilder, LocalInstBuilder, ValueBuilder}, BinaryOp, FunctionData, Program, Type, TypeKind};
 use std::result::Result;
 
 pub trait GenerateKoopa<'ast> {
@@ -51,7 +51,7 @@ impl<'ast> GenerateKoopa<'ast> for ConstDecl {
 impl<'ast> GenerateKoopa<'ast> for BType {
     type Out = Type;
 
-    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+    fn generate_koopa(&'ast self, _program: &mut Program, _env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
             Self::Int => Ok(Type::get_i32()),
         }
@@ -61,7 +61,7 @@ impl<'ast> GenerateKoopa<'ast> for BType {
 impl<'ast> GenerateKoopa<'ast> for ConstDef {
     type Out = ();
 
-    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+    fn generate_koopa(&'ast self, _program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         let const_val = self.const_init_val.evaluate(env)?;
         if env.contains_symbol_in_cur_scope(&self.ident) {
             return Err(IrgenError::SymbolDeclaredMoreThanOnce);
@@ -202,7 +202,7 @@ impl<'ast> GenerateKoopa<'ast> for FuncDef {
 impl<'ast> GenerateKoopa<'ast> for FuncType {
     type Out = Type;
 
-    fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+    fn generate_koopa(&'ast self, _program: &mut Program, _env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
             Self::Int => Ok(Type::get_i32()),
             Self::Void => Ok(Type::get_unit()),

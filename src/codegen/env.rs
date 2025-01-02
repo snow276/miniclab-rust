@@ -14,14 +14,6 @@ impl<'p, 'f> CodegenEnv<'p> {
         Self { program, cur_func: None , stack_info: StackInfo::new() }
     }
 
-    pub fn get_program(&self) -> &'p Program {
-        self.program
-    }
-
-    pub fn get_cur_func(&self) -> Option<&Function> {
-        self.cur_func.as_ref()
-    }
-
     pub fn set_cur_func(&mut self, func: Function) {
         self.cur_func = Some(func);
     }

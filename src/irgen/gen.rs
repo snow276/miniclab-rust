@@ -1,6 +1,6 @@
 use super::{env::IrgenEnv, eval::Evaluate, symbol::SymbolInfo, IrgenError};
-use crate::{ast::*, codegen};
-use koopa::ir::{builder::{BasicBlockBuilder, LocalInstBuilder, ValueBuilder}, BinaryOp, FunctionData, Program, Type, Value};
+use crate::ast::*;
+use koopa::ir::{builder::{BasicBlockBuilder, LocalInstBuilder, ValueBuilder}, BinaryOp, FunctionData, Program, Type, TypeKind, Value};
 use std::result::Result;
 
 pub trait GenerateKoopa<'ast> {
@@ -13,7 +13,11 @@ impl<'ast> GenerateKoopa<'ast> for CompUnit {
     type Out = ();
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
-        self.func_def.generate_koopa(program, env)?;
+        env.push_scope();
+        for func_def in &self.func_def_list {
+            func_def.generate_koopa(program, env)?;
+        }
+        env.pop_scope();
         Ok(())
     }
 }
@@ -112,14 +116,22 @@ impl<'ast> GenerateKoopa<'ast> for FuncDef {
     type Out = ();
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
-        let params_ty = vec![];
+        let mut params_ty = vec![];
+        if let Some(func_f_params) = self.func_f_params.as_ref() {
+            for func_f_param in &func_f_params.func_f_param_list {
+                let ty = func_f_param.b_type.generate_koopa(program, env)?;
+                params_ty.push(ty);
+            }
+        }
         let ret_ty = self.func_type.generate_koopa(program, env)?;
         let func = program.new_func(FunctionData::new(
             format!("@{}", self.ident), 
-            params_ty, 
+            params_ty.clone(), 
             ret_ty.clone()
         ));
+        env.new_func(&self.ident, func);
         env.set_cur_func(func);
+        env.set_cur_func_type(ret_ty);
 
         let entry = env.new_bb(program).basic_block(Some("%entry".into()));
         let exit = env.new_bb(program).basic_block(Some("%exit".into()));
@@ -130,13 +142,30 @@ impl<'ast> GenerateKoopa<'ast> for FuncDef {
         env.set_cur_bb_returned(false);
         env.push_scope();
 
-        let alloc_ret = env.new_value(program).alloc(ret_ty);
-        env.new_inst(program).push_key_back(alloc_ret).unwrap();
-        env.dfg_mut(program).set_value_name(alloc_ret, Some("%ret".into()));
-        env.new_symbol_var("%ret", alloc_ret);
+        match env.get_cur_func_type().unwrap().kind() {
+            TypeKind::Int32 => {
+                let alloc_ret = env.new_value(program).alloc(Type::get_i32());
+                env.new_inst(program).push_key_back(alloc_ret).unwrap();
+                env.dfg_mut(program).set_value_name(alloc_ret, Some("%ret".into()));
+                env.new_symbol_var("%ret", alloc_ret);
+            },
+            TypeKind::Unit => {},
+            _ => unreachable!()
+        }
+
+        if let Some(func_f_params) = self.func_f_params.as_ref() {
+            let params = program.func(func).params().to_vec();
+            for ((func_f_param, param_ty), param) in func_f_params.func_f_param_list.iter().zip(params_ty.iter()).zip(params.iter()) {
+                let alloc_param = env.new_value(program).alloc(param_ty.clone());
+                env.dfg_mut(program).set_value_name(alloc_param, Some(format!("@{}", func_f_param.ident)));
+                env.new_inst(program).push_key_back(alloc_param).unwrap();
+                env.new_symbol_var(&func_f_param.ident, alloc_param);
+                let store_param = env.new_value(program).store(*param, alloc_param);
+                env.new_inst(program).push_key_back(store_param).unwrap();
+            }
+        }
 
         self.block.generate_koopa(program, env)?;
-        env.pop_scope();
 
         if !env.is_cur_bb_returned() {
             let jump = env.new_value(program).jump(exit);
@@ -145,10 +174,26 @@ impl<'ast> GenerateKoopa<'ast> for FuncDef {
 
         env.layout_mut(program).bbs_mut().extend([exit]);
         env.set_cur_bb(exit);
-        let load = env.new_value(program).load(alloc_ret);
-        let ret = env.new_value(program).ret(Some(load));
-        env.new_inst(program).push_key_back(load).unwrap();
-        env.new_inst(program).push_key_back(ret).unwrap();
+
+        match env.get_cur_func_type().unwrap().kind() {
+            TypeKind::Int32 => {
+                let alloc_ret = match env.get_symbol("%ret").unwrap() {
+                    SymbolInfo::Variable(alloc) => *alloc,
+                    _ => unreachable!()
+                };
+                let load = env.new_value(program).load(alloc_ret);
+                let ret = env.new_value(program).ret(Some(load));
+                env.new_inst(program).push_key_back(load).unwrap();
+                env.new_inst(program).push_key_back(ret).unwrap();
+            },
+            TypeKind::Unit => {
+                let ret = env.new_value(program).ret(None);
+                env.new_inst(program).push_key_back(ret).unwrap();
+            },
+            _ => unreachable!()
+        }
+
+        env.pop_scope();
 
         Ok(())
     }
@@ -160,6 +205,7 @@ impl<'ast> GenerateKoopa<'ast> for FuncType {
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
             Self::Int => Ok(Type::get_i32()),
+            Self::Void => Ok(Type::get_unit()),
         }
     }
 }
@@ -408,6 +454,9 @@ impl<'ast> GenerateKoopa<'ast> for SimpleStmt {
                         SymbolInfo::Variable(alloc) => {
                             let store = env.new_value(program).store(val, *alloc);
                             env.new_inst(program).push_key_back(store).unwrap();
+                        },
+                        SymbolInfo::Function(_) => {
+                            return Err(IrgenError::UseFunctionAsVariable);
                         }
                     }
                 } else {
@@ -443,22 +492,35 @@ impl<'ast> GenerateKoopa<'ast> for SimpleStmt {
                 }
             },
             Self::Return(exp) => {
-                let ret_val = env.get_symbol("%ret").unwrap();
-                let ret_val = match ret_val {
-                    SymbolInfo::Variable(alloc) => *alloc,
-                    _ => unreachable!()
-                };
-                match exp.as_ref() {
-                    Some(exp) => {
-                        let val = exp.generate_koopa(program, env)?;
-                        let store = env.new_value(program).store(val, ret_val);
-                        env.new_inst(program).push_key_back(store).unwrap();
+                match env.get_cur_func_type().unwrap().kind() {
+                    TypeKind::Int32 => {
+                        let ret_val = env.get_symbol("%ret").unwrap();
+                        let ret_val = match ret_val {
+                            SymbolInfo::Variable(alloc) => *alloc,
+                            _ => unreachable!()
+                        };
+                        match exp.as_ref() {
+                            Some(exp) => {
+                                let val = exp.generate_koopa(program, env)?;
+                                let store = env.new_value(program).store(val, ret_val);
+                                env.new_inst(program).push_key_back(store).unwrap();
+                            },
+                            None => {}
+                        }
+                        let jump = env.new_value(program).jump(*env.get_exit_bb().unwrap());
+                        env.new_inst(program).push_key_back(jump).unwrap();
+                        env.set_cur_bb_returned(true);
                     },
-                    None => {}
+                    TypeKind::Unit => {
+                        if let Some(_) = exp.as_ref() {
+                            return Err(IrgenError::ReturnWithExpressionInVoidFunction);
+                        }
+                        let jump = env.new_value(program).jump(*env.get_exit_bb().unwrap());
+                        env.new_inst(program).push_key_back(jump).unwrap();
+                        env.set_cur_bb_returned(true);
+                    },
+                    _ => unreachable!()
                 }
-                let jump = env.new_value(program).jump(*env.get_exit_bb().unwrap());
-                env.new_inst(program).push_key_back(jump).unwrap();
-                env.set_cur_bb_returned(true);
             },
         }
         
@@ -487,6 +549,9 @@ impl<'ast> GenerateKoopa<'ast> for LVal {
                     let load = env.new_value(program).load(*alloc);
                     env.new_inst(program).push_key_back(load).unwrap();
                     Ok(load)
+                },
+                SymbolInfo::Function(_) => {
+                    Err(IrgenError::UseFunctionAsVariable)
                 }
             }
         } else {
@@ -503,6 +568,22 @@ impl<'ast> GenerateKoopa<'ast> for UnaryExp {
             Self::PrimaryExp(primary_exp) => {
                 primary_exp.generate_koopa(program, env)
             },
+            Self::FuncCall(ident, func_r_params) => {
+                let mut args = vec![];
+                if let Some(func_r_params) = func_r_params {
+                    for func_r_param in &func_r_params.exp_list {
+                        let arg = func_r_param.generate_koopa(program, env)?;
+                        args.push(arg);
+                    }
+                }
+                if let Some(func) = env.get_func(ident) {
+                    let call = env.new_value(program).call(*func, args);
+                    env.new_inst(program).push_key_back(call).unwrap();
+                    Ok(call)
+                } else {
+                    Err(IrgenError::FunctionUndeclared)
+                }
+            }
             Self::UnaryExp(op, unary_exp) => {
                 let exp = unary_exp.generate_koopa(program, env)?;
                 let zero = env.new_value(program).integer(0);

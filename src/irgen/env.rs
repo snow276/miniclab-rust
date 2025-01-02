@@ -2,12 +2,13 @@ use koopa::ir::builder::{BlockBuilder, LocalBuilder};
 use koopa::ir::dfg::DataFlowGraph;
 use koopa::ir::entities::Function;
 use koopa::ir::layout::{InstList, Layout};
-use koopa::ir::{BasicBlock, Program, Value};
+use koopa::ir::{BasicBlock, Program, Type, Value};
 
 use super::symbol::{SymbolInfo, SymbolTable};
 
 pub struct IrgenEnv<'s> {
     cur_func: Option<Function>,
+    cur_func_type: Option<Type>,
     cur_bb: Option<BasicBlock>,
     cur_bb_returned: bool,
     sym_tab: Vec<Box<SymbolTable<'s>>>,
@@ -24,6 +25,7 @@ impl<'s> IrgenEnv<'s> {
     pub fn new() -> Self {
         Self { 
             cur_func: None, 
+            cur_func_type: None,
             cur_bb: None, 
             cur_bb_returned: false, 
             sym_tab: Vec::new(), 
@@ -43,6 +45,14 @@ impl<'s> IrgenEnv<'s> {
 
     pub fn set_cur_func(&mut self, func: Function) {
         self.cur_func = Some(func);
+    }
+
+    pub fn get_cur_func_type(&self) -> Option<&Type> {
+        self.cur_func_type.as_ref()
+    }
+
+    pub fn set_cur_func_type(&mut self, ty: Type) {
+        self.cur_func_type = Some(ty);
     }
 
     pub fn get_cur_bb(&self) -> Option<&BasicBlock> {
@@ -114,6 +124,20 @@ impl<'s> IrgenEnv<'s> {
             }
         }
         None
+    }
+
+    pub fn new_func(&mut self, ident: &'s str, func: Function) {
+        let global_sym_tab = self.sym_tab.first_mut().unwrap();
+        global_sym_tab.set_value(ident, SymbolInfo::Function(func));
+    }
+
+    pub fn get_func(&self, ident: &'s str) -> Option<&Function> {
+        let global_sym_tab = self.sym_tab.first().unwrap();
+        if let Some(SymbolInfo::Function(func)) = global_sym_tab.get_value(ident) {
+            Some(func)
+        } else {
+            None
+        }
     }
 
     pub fn set_cur_bb_returned(&mut self, returned: bool) {

@@ -1,5 +1,5 @@
 // EBNF:
-// CompUnit      ::= FuncDef;
+// CompUnit      ::= [CompUnit] FuncDef;
 
 // Decl          ::= ConstDecl | VarDecl;
 // ConstDecl     ::= "const" BType ConstDef {"," ConstDef} ";";
@@ -10,8 +10,9 @@
 // VarDef        ::= IDENT | IDENT "=" InitVal;
 // InitVal       ::= Exp;
 
-// FuncDef       ::= FuncType IDENT "(" ")" Block;
-// FuncType      ::= "int";
+// FuncDef       ::= BType IDENT "(" [FuncFParams] ")" Block;
+// FuncFParams   ::= FuncFParam {"," FuncFParam};
+// FuncFParam    ::= BType IDENT;
 
 // Block         ::= "{" {BlockItem} "}";
 // BlockItem     ::= Decl | Stmt;
@@ -33,7 +34,10 @@
 // LVal          ::= IDENT;
 // PrimaryExp    ::= "(" Exp ")" | LVal | Number;
 // Number        ::= INT_CONST;
-// UnaryExp      ::= PrimaryExp | UnaryOp UnaryExp;
+// UnaryExp      ::= PrimaryExp 
+//                 | IDENT "(" [FuncRParams] ")"
+//                 | UnaryOp UnaryExp;
+// FuncRParams   ::= Exp {"," Exp};
 // UnaryOp       ::= "+" | "-" | "!";
 // MulExp        ::= UnaryExp | MulExp ("*" | "/" | "%") UnaryExp;
 // AddExp        ::= MulExp | AddExp ("+" | "-") MulExp;
@@ -45,7 +49,7 @@
 
 #[derive(Debug)]
 pub struct CompUnit {
-    pub func_def: FuncDef,
+    pub func_def_list: Vec<FuncDef>,
 }
 
 #[derive(Debug)]
@@ -97,12 +101,25 @@ pub struct InitVal {
 pub struct FuncDef {
     pub func_type: FuncType,
     pub ident: String,
+    pub func_f_params: Option<FuncFParams>,
     pub block: Block,
+}
+
+#[derive(Debug)]
+pub struct FuncFParams {
+    pub func_f_param_list: Vec<FuncFParam>,
+}
+
+#[derive(Debug)]
+pub struct FuncFParam {
+    pub b_type: BType,
+    pub ident: String,
 }
 
 #[derive(Debug)]
 pub enum FuncType {
     Int,
+    Void,
 }
 
 #[derive(Debug)]
@@ -166,7 +183,13 @@ pub enum PrimaryExp {
 #[derive(Debug)]
 pub enum UnaryExp {
     PrimaryExp(PrimaryExp),
+    FuncCall(String, Option<FuncRParams>),
     UnaryExp(UnaryOp, Box<UnaryExp>),
+}
+
+#[derive(Debug)]
+pub struct FuncRParams {
+    pub exp_list: Vec<Exp>,
 }
 
 #[derive(Debug)]

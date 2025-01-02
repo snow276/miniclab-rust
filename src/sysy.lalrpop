@@ -11,7 +11,9 @@ match {
   _
 }
 
-pub CompUnit: CompUnit = <func_def: FuncDef> => CompUnit { <> };
+pub CompUnit: CompUnit = {
+  <func_def_list: (FuncDef)*> => CompUnit { func_def_list: func_def_list }
+}
 
 Decl: Decl = {
   <const_decl: ConstDecl> => Decl::ConstDecl(<>),
@@ -54,12 +56,26 @@ VarDef: VarDef = {
 InitVal: InitVal = <exp: Exp> => InitVal { exp: Box::new(exp) };
 
 FuncDef: FuncDef = {
-  <func_type: FuncType> <ident: Ident> "(" ")" <block: Block> => {
+  <func_type: FuncType> <ident: Ident> "(" <func_f_params: FuncFParams?> ")" <block: Block> => {
     FuncDef { <> }
   }
 }
 
-FuncType: FuncType = "int" => FuncType::Int;
+FuncFParams: FuncFParams = {
+  <first_func_f_param: FuncFParam> <mut func_f_param_list: ("," <FuncFParam>)*> => {
+    func_f_param_list.insert(0, first_func_f_param);
+    FuncFParams { func_f_param_list: func_f_param_list }
+  }
+}
+
+FuncFParam: FuncFParam = {
+  <b_type: BType> <ident: Ident> => FuncFParam { <> }
+}
+
+FuncType: FuncType = {
+  "int" => FuncType::Int,
+  "void" => FuncType::Void,
+}
 
 Block: Block = "{" <block_item_list: (BlockItem)*> "}" => Block { <> };
 
@@ -106,7 +122,15 @@ PrimaryExp: PrimaryExp = {
 
 UnaryExp: UnaryExp = {
   <primary_exp: PrimaryExp> => UnaryExp::PrimaryExp(<>),
+  <ident: Ident> "(" <func_r_params: FuncRParams?> ")" => UnaryExp::FuncCall(ident, func_r_params),
   <unary_op: UnaryOp> <unary_exp: UnaryExp> => UnaryExp::UnaryExp(unary_op, Box::new(unary_exp)) ,
+}
+
+FuncRParams: FuncRParams = {
+  <first_exp: Exp> <mut exp_list: ("," <Exp>)*> => {
+    exp_list.insert(0, first_exp);
+    FuncRParams { exp_list: exp_list }
+  }
 }
 
 UnaryOp: UnaryOp = {

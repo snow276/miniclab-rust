@@ -12,7 +12,8 @@ impl Evaluate for LVal {
         if let Some(symbol_info) = env.get_symbol(&self.ident) {
             match symbol_info {
                 SymbolInfo::Const(val) => Ok(*val),
-                SymbolInfo::Variable(_) => Err(IrgenError::InitializeConstWithVariable)
+                SymbolInfo::Variable(_) => Err(IrgenError::InitializeConstWithVariable),
+                SymbolInfo::Function(_) => Err(IrgenError::InitializeConstWithFunctionCall),
             }
         } else {
             Err(IrgenError::SymbolUndeclared)
@@ -156,6 +157,7 @@ impl Evaluate for UnaryExp {
     fn evaluate(&self, env: &IrgenEnv) -> Result<i32, IrgenError> {
         match self {
             Self::PrimaryExp(primary_exp) => primary_exp.evaluate(env),
+            Self::FuncCall(_, _) => Err(IrgenError::UseFunctionAsVariable),
             Self::UnaryExp(op, unary_exp) => {
                 let val = unary_exp.evaluate(env)?;
                 match op {

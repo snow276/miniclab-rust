@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
-use koopa::ir::Value;
+use koopa::ir::{Function, Value};
 
 #[derive(Clone, Copy)]
 pub enum SymbolInfo {
     Const(i32),
     Variable(Value), // This value should point to an "Alloc" in the IR.
+    Function(Function),
 }
 
 pub struct SymbolTable<'s> {

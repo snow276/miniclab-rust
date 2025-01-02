@@ -25,6 +25,10 @@ pub enum IrgenError {
     InitializeConstWithVariable,
     BreakOutsideLoop,
     ContinueOutsideLoop,
+    UseFunctionAsVariable,
+    FunctionUndeclared,
+    InitializeConstWithFunctionCall,
+    ReturnWithExpressionInVoidFunction,
 }
 
 impl fmt::Display for IrgenError {
@@ -37,6 +41,10 @@ impl fmt::Display for IrgenError {
             Self::InitializeConstWithVariable => write!(f, "Initializing a const symbol with a variable"),
             Self::BreakOutsideLoop => write!(f, "Break statement outside loop"),
             Self::ContinueOutsideLoop => write!(f, "Continue statement outside loop"),
+            Self::UseFunctionAsVariable => write!(f, "Using a function as a variable"),
+            Self::FunctionUndeclared => write!(f, "Function undeclared"),
+            Self::InitializeConstWithFunctionCall => write!(f, "Initializing a const symbol with a function call"),
+            Self::ReturnWithExpressionInVoidFunction => write!(f, "Returning with an expression in a void function"),
         }
     }
 }

@@ -1,4 +1,4 @@
-use super::{env::IrgenEnv, eval::Evaluate, symbol::SymbolInfo, IrgenError};
+use super::{env::IrgenEnv, eval::Evaluate, exp_type::ExpType, symbol::SymbolInfo, IrgenError};
 use crate::ast::*;
 use koopa::ir::{builder::{BasicBlockBuilder, LocalInstBuilder, ValueBuilder}, BinaryOp, FunctionData, Program, Type, TypeKind, Value};
 use std::result::Result;
@@ -96,7 +96,7 @@ impl<'ast> GenerateKoopa<'ast> for VarDef {
         env.new_symbol_var(&self.ident, alloc);   
 
         if let Some(init_val) = self.init_val.as_ref() {
-            let val = init_val.generate_koopa(program, env)?;
+            let val = init_val.generate_koopa(program, env)?.to_int()?;
             let store = env.new_value(program).store(val, alloc);
             env.new_inst(program).push_key_back(store).unwrap();
         }
@@ -105,7 +105,7 @@ impl<'ast> GenerateKoopa<'ast> for VarDef {
 }
 
 impl<'ast> GenerateKoopa<'ast> for InitVal {
-    type Out = Value;
+    type Out = ExpType;
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         self.exp.generate_koopa(program, env)
@@ -265,7 +265,7 @@ impl<'ast> GenerateKoopa<'ast> for OpenStmt {
                 let then_bb = env.new_bb(program).basic_block(Some(format!("%then_{}", bid).into()));
                 let end_bb = env.new_bb(program).basic_block(Some(format!("%end_{}", bid).into()));
 
-                let cond = exp.generate_koopa(program, env)?;
+                let cond = exp.generate_koopa(program, env)?.to_int()?;
                 let br = env.new_value(program).branch(cond, then_bb, end_bb);
                 env.new_inst(program).push_key_back(br).unwrap();
 
@@ -289,7 +289,7 @@ impl<'ast> GenerateKoopa<'ast> for OpenStmt {
                 let else_bb = env.new_bb(program).basic_block(Some(format!("%else_{}", bid).into()));
                 let end_bb = env.new_bb(program).basic_block(Some(format!("%end_{}", bid).into()));
 
-                let cond = exp.generate_koopa(program, env)?;
+                let cond = exp.generate_koopa(program, env)?.to_int()?;
                 let br = env.new_value(program).branch(cond, then_bb, else_bb);
                 env.new_inst(program).push_key_back(br).unwrap();
                 
@@ -332,7 +332,7 @@ impl<'ast> GenerateKoopa<'ast> for OpenStmt {
 
                 env.layout_mut(program).bbs_mut().extend([cond_bb]);
                 env.set_cur_bb(cond_bb);
-                let cond = exp.generate_koopa(program, env)?;
+                let cond = exp.generate_koopa(program, env)?.to_int()?;
                 let br = env.new_value(program).branch(cond, body_bb, end_bb);
                 env.new_inst(program).push_key_back(br).unwrap();
 
@@ -371,7 +371,7 @@ impl<'ast> GenerateKoopa<'ast> for ClosedStmt {
                 let else_bb = env.new_bb(program).basic_block(Some(format!("%else_{}", bid).into()));
                 let end_bb = env.new_bb(program).basic_block(Some(format!("%end_{}", bid).into()));
 
-                let cond = exp.generate_koopa(program, env)?;
+                let cond = exp.generate_koopa(program, env)?.to_int()?;
                 let br = env.new_value(program).branch(cond, then_bb, else_bb);
                 env.new_inst(program).push_key_back(br).unwrap();
                 
@@ -414,7 +414,7 @@ impl<'ast> GenerateKoopa<'ast> for ClosedStmt {
 
                 env.layout_mut(program).bbs_mut().extend([cond_bb]);
                 env.set_cur_bb(cond_bb);
-                let cond = exp.generate_koopa(program, env)?;
+                let cond = exp.generate_koopa(program, env)?.to_int()?;
                 let br = env.new_value(program).branch(cond, body_bb, end_bb);
                 env.new_inst(program).push_key_back(br).unwrap();
 
@@ -445,7 +445,7 @@ impl<'ast> GenerateKoopa<'ast> for SimpleStmt {
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
             Self::Assign(l_val, exp) => {
-                let val = exp.generate_koopa(program, env)?;
+                let val = exp.generate_koopa(program, env)?.to_int()?;
                 if let Some(symbol_info) = env.get_symbol(&l_val.ident) {
                     match symbol_info {
                         SymbolInfo::Const(_) => {
@@ -501,7 +501,7 @@ impl<'ast> GenerateKoopa<'ast> for SimpleStmt {
                         };
                         match exp.as_ref() {
                             Some(exp) => {
-                                let val = exp.generate_koopa(program, env)?;
+                                let val = exp.generate_koopa(program, env)?.to_int()?;
                                 let store = env.new_value(program).store(val, ret_val);
                                 env.new_inst(program).push_key_back(store).unwrap();
                             },
@@ -529,7 +529,7 @@ impl<'ast> GenerateKoopa<'ast> for SimpleStmt {
 }
 
 impl<'ast> GenerateKoopa<'ast> for Exp {
-    type Out = Value;
+    type Out = ExpType;
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         self.l_or_exp.generate_koopa(program, env)
@@ -537,18 +537,18 @@ impl<'ast> GenerateKoopa<'ast> for Exp {
 }
 
 impl<'ast> GenerateKoopa<'ast> for LVal {
-    type Out = Value;
+    type Out = ExpType;
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         if let Some(symbol_info) = env.get_symbol(&self.ident) {
             match symbol_info {
                 SymbolInfo::Const(val) => {
-                    Ok(env.new_value(program).integer(*val))
+                    Ok(ExpType::Int(env.new_value(program).integer(*val)))
                 },
                 SymbolInfo::Variable(alloc) => {
                     let load = env.new_value(program).load(*alloc);
                     env.new_inst(program).push_key_back(load).unwrap();
-                    Ok(load)
+                    Ok(ExpType::Int(load))
                 },
                 SymbolInfo::Function(_) => {
                     Err(IrgenError::UseFunctionAsVariable)
@@ -561,7 +561,7 @@ impl<'ast> GenerateKoopa<'ast> for LVal {
 }
 
 impl<'ast> GenerateKoopa<'ast> for UnaryExp {
-    type Out = Value;
+    type Out = ExpType;
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
@@ -572,24 +572,37 @@ impl<'ast> GenerateKoopa<'ast> for UnaryExp {
                 let mut args = vec![];
                 if let Some(func_r_params) = func_r_params {
                     for func_r_param in &func_r_params.exp_list {
-                        let arg = func_r_param.generate_koopa(program, env)?;
+                        let arg = func_r_param.generate_koopa(program, env)?.to_int()?;
                         args.push(arg);
                     }
                 }
                 if let Some(func) = env.get_func(ident) {
                     let call = env.new_value(program).call(*func, args);
                     env.new_inst(program).push_key_back(call).unwrap();
-                    Ok(call)
+                    let func_ty = program.func(*func).ty();
+                    if let TypeKind::Function(_, ret_ty) = func_ty.kind() {
+                        match ret_ty.kind() {
+                            TypeKind::Int32 => {
+                                Ok(ExpType::Int(call))
+                            },
+                            TypeKind::Unit => {
+                                Ok(ExpType::Void)
+                            },
+                            _ => unreachable!(),
+                        }
+                    } else {
+                        unreachable!()
+                    }
                 } else {
                     Err(IrgenError::FunctionUndeclared)
                 }
             }
             Self::UnaryExp(op, unary_exp) => {
-                let exp = unary_exp.generate_koopa(program, env)?;
+                let exp = unary_exp.generate_koopa(program, env)?.to_int()?;
                 let zero = env.new_value(program).integer(0);
                 let value = match op {
                     UnaryOp::Plus => {
-                        return Ok(exp);
+                        return Ok(ExpType::Int(exp));
                     },
                     UnaryOp::Minus => {
                         env.new_value(program).binary(BinaryOp::Sub, zero, exp)
@@ -599,14 +612,14 @@ impl<'ast> GenerateKoopa<'ast> for UnaryExp {
                     },
                 };
                 env.new_inst(program).push_key_back(value).unwrap();
-                Ok(value)
+                Ok(ExpType::Int(value))
             }
         }
     }
 }
 
 impl<'ast> GenerateKoopa<'ast> for PrimaryExp {
-    type Out = Value;
+    type Out = ExpType;
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
@@ -617,14 +630,14 @@ impl<'ast> GenerateKoopa<'ast> for PrimaryExp {
                 l_val.generate_koopa(program, env)
             },
             Self::Number(num) => {
-                Ok(env.new_value(program).integer(*num))
+                Ok(ExpType::Int(env.new_value(program).integer(*num)))
             }
         }
     }
 }
 
 impl<'ast> GenerateKoopa<'ast> for MulExp {
-    type Out = Value;
+    type Out = ExpType;
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
@@ -632,32 +645,32 @@ impl<'ast> GenerateKoopa<'ast> for MulExp {
                 unary_exp.generate_koopa(program, env)
             },
             Self::Mul(mul_exp, unary_exp) => {
-                let lhs = mul_exp.generate_koopa(program, env)?;
-                let rhs = unary_exp.generate_koopa(program, env)?;
+                let lhs = mul_exp.generate_koopa(program, env)?.to_int()?;
+                let rhs = unary_exp.generate_koopa(program, env)?.to_int()?;
                 let value = env.new_value(program).binary(BinaryOp::Mul, lhs, rhs);
                 env.new_inst(program).push_key_back(value).unwrap();
-                Ok(value)
+                Ok(ExpType::Int(value))
             },
             Self::Div(mul_exp, unary_exp) => {
-                let lhs = mul_exp.generate_koopa(program, env)?;
-                let rhs = unary_exp.generate_koopa(program, env)?;
+                let lhs = mul_exp.generate_koopa(program, env)?.to_int()?;
+                let rhs = unary_exp.generate_koopa(program, env)?.to_int()?;
                 let value = env.new_value(program).binary(BinaryOp::Div, lhs, rhs);
                 env.new_inst(program).push_key_back(value).unwrap();
-                Ok(value)
+                Ok(ExpType::Int(value))
             },
             Self::Mod(mul_exp, unary_exp) => {
-                let lhs = mul_exp.generate_koopa(program, env)?;
-                let rhs = unary_exp.generate_koopa(program, env)?;
+                let lhs = mul_exp.generate_koopa(program, env)?.to_int()?;
+                let rhs = unary_exp.generate_koopa(program, env)?.to_int()?;
                 let value = env.new_value(program).binary(BinaryOp::Mod, lhs, rhs);
                 env.new_inst(program).push_key_back(value).unwrap();
-                Ok(value)
+                Ok(ExpType::Int(value))
             }
         }
     }
 }
 
 impl<'ast> GenerateKoopa<'ast> for AddExp {
-    type Out = Value;
+    type Out = ExpType;
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
@@ -665,25 +678,25 @@ impl<'ast> GenerateKoopa<'ast> for AddExp {
                 mul_exp.generate_koopa(program, env)
             },
             Self::Add(add_exp, mul_exp) => {
-                let lhs = add_exp.generate_koopa(program, env)?;
-                let rhs = mul_exp.generate_koopa(program, env)?;
+                let lhs = add_exp.generate_koopa(program, env)?.to_int()?;
+                let rhs = mul_exp.generate_koopa(program, env)?.to_int()?;
                 let value = env.new_value(program).binary(BinaryOp::Add, lhs, rhs);
                 env.new_inst(program).push_key_back(value).unwrap();
-                Ok(value)
+                Ok(ExpType::Int(value))
             },
             Self::Sub(add_exp, mul_exp) => {
-                let lhs = add_exp.generate_koopa(program, env)?;
-                let rhs = mul_exp.generate_koopa(program, env)?;
+                let lhs = add_exp.generate_koopa(program, env)?.to_int()?;
+                let rhs = mul_exp.generate_koopa(program, env)?.to_int()?;
                 let value = env.new_value(program).binary(BinaryOp::Sub, lhs, rhs);
                 env.new_inst(program).push_key_back(value).unwrap();
-                Ok(value)
+                Ok(ExpType::Int(value))
             }
         }
     }
 }
 
 impl<'ast> GenerateKoopa<'ast> for RelExp {
-    type Out = Value;
+    type Out = ExpType;
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
@@ -691,39 +704,39 @@ impl<'ast> GenerateKoopa<'ast> for RelExp {
                 add_exp.generate_koopa(program, env)
             },
             Self::Lt(add_exp, rel_exp) => {
-                let lhs = add_exp.generate_koopa(program, env)?;
-                let rhs = rel_exp.generate_koopa(program, env)?;
+                let lhs = add_exp.generate_koopa(program, env)?.to_int()?;
+                let rhs = rel_exp.generate_koopa(program, env)?.to_int()?;
                 let value = env.new_value(program).binary(BinaryOp::Lt, lhs, rhs);
                 env.new_inst(program).push_key_back(value).unwrap();
-                Ok(value)
+                Ok(ExpType::Int(value))
             },
             Self::Gt(add_exp, rel_exp) => {
-                let lhs = add_exp.generate_koopa(program, env)?;
-                let rhs = rel_exp.generate_koopa(program, env)?;
+                let lhs = add_exp.generate_koopa(program, env)?.to_int()?;
+                let rhs = rel_exp.generate_koopa(program, env)?.to_int()?;
                 let value = env.new_value(program).binary(BinaryOp::Gt, lhs, rhs);
                 env.new_inst(program).push_key_back(value).unwrap();
-                Ok(value)
+                Ok(ExpType::Int(value))
             },
             Self::Le(add_exp, rel_exp) => {
-                let lhs = add_exp.generate_koopa(program, env)?;
-                let rhs = rel_exp.generate_koopa(program, env)?;
+                let lhs = add_exp.generate_koopa(program, env)?.to_int()?;
+                let rhs = rel_exp.generate_koopa(program, env)?.to_int()?;
                 let value = env.new_value(program).binary(BinaryOp::Le, lhs, rhs);
                 env.new_inst(program).push_key_back(value).unwrap();
-                Ok(value)
+                Ok(ExpType::Int(value))
             }
             Self::Ge(add_exp, rel_exp) => {
-                let lhs = add_exp.generate_koopa(program, env)?;
-                let rhs = rel_exp.generate_koopa(program, env)?;
+                let lhs = add_exp.generate_koopa(program, env)?.to_int()?;
+                let rhs = rel_exp.generate_koopa(program, env)?.to_int()?;
                 let value = env.new_value(program).binary(BinaryOp::Ge, lhs, rhs);
                 env.new_inst(program).push_key_back(value).unwrap();
-                Ok(value)
+                Ok(ExpType::Int(value))
             }
         }  
     }
 }
 
 impl<'ast> GenerateKoopa<'ast> for EqExp {
-    type Out = Value;
+    type Out = ExpType;
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
@@ -731,25 +744,25 @@ impl<'ast> GenerateKoopa<'ast> for EqExp {
                 rel_exp.generate_koopa(program, env)
             },
             Self::Eq(eq_exp, rel_exp) => {
-                let lhs = eq_exp.generate_koopa(program, env)?;
-                let rhs = rel_exp.generate_koopa(program, env)?;
+                let lhs = eq_exp.generate_koopa(program, env)?.to_int()?;
+                let rhs = rel_exp.generate_koopa(program, env)?.to_int()?;
                 let value = env.new_value(program).binary(BinaryOp::Eq, lhs, rhs);
                 env.new_inst(program).push_key_back(value).unwrap();
-                Ok(value)
+                Ok(ExpType::Int(value))
             },
             Self::Ne(eq_exp, rel_exp) => {
-                let lhs = eq_exp.generate_koopa(program, env)?;
-                let rhs = rel_exp.generate_koopa(program, env)?;
+                let lhs = eq_exp.generate_koopa(program, env)?.to_int()?;
+                let rhs = rel_exp.generate_koopa(program, env)?.to_int()?;
                 let value = env.new_value(program).binary(BinaryOp::NotEq, lhs, rhs);
                 env.new_inst(program).push_key_back(value).unwrap();
-                Ok(value)
+                Ok(ExpType::Int(value))
             }
         }
     }
 }
 
 impl<'ast> GenerateKoopa<'ast> for LAndExp {
-    type Out = Value;
+    type Out = ExpType;
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
@@ -764,7 +777,7 @@ impl<'ast> GenerateKoopa<'ast> for LAndExp {
                 let alloc_res = env.new_value(program).alloc(Type::get_i32());
                 env.new_inst(program).push_key_back(alloc_res).unwrap();
 
-                let lhs = l_and_exp.generate_koopa(program, env)?;
+                let lhs = l_and_exp.generate_koopa(program, env)?.to_int()?;
                 let zero = env.new_value(program).integer(0);
                 let lhs_ne_zero = env.new_value(program).binary(BinaryOp::NotEq, lhs, zero);
                 env.new_inst(program).push_key_back(lhs_ne_zero).unwrap();
@@ -775,7 +788,7 @@ impl<'ast> GenerateKoopa<'ast> for LAndExp {
 
                 env.layout_mut(program).bbs_mut().extend([rhs_bb]);
                 env.set_cur_bb(rhs_bb);
-                let rhs = eq_exp.generate_koopa(program, env)?;
+                let rhs = eq_exp.generate_koopa(program, env)?.to_int()?;
                 let zero = env.new_value(program).integer(0);
                 let rhs_ne_zero = env.new_value(program).binary(BinaryOp::NotEq, rhs, zero);
                 env.new_inst(program).push_key_back(rhs_ne_zero).unwrap();
@@ -788,14 +801,14 @@ impl<'ast> GenerateKoopa<'ast> for LAndExp {
                 env.set_cur_bb(end_bb);
                 let load = env.new_value(program).load(alloc_res);
                 env.new_inst(program).push_key_back(load).unwrap();
-                Ok(load)
+                Ok(ExpType::Int(load))
             }
         }
     }
 }
 
 impl<'ast> GenerateKoopa<'ast> for LOrExp {
-    type Out = Value;
+    type Out = ExpType;
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
@@ -810,7 +823,7 @@ impl<'ast> GenerateKoopa<'ast> for LOrExp {
                 let alloc_res = env.new_value(program).alloc(Type::get_i32());
                 env.new_inst(program).push_key_back(alloc_res).unwrap();
 
-                let lhs = l_or_exp.generate_koopa(program, env)?;
+                let lhs = l_or_exp.generate_koopa(program, env)?.to_int()?;
                 let zero = env.new_value(program).integer(0);
                 let lhs_ne_zero = env.new_value(program).binary(BinaryOp::NotEq, lhs, zero);
                 env.new_inst(program).push_key_back(lhs_ne_zero).unwrap();
@@ -821,7 +834,7 @@ impl<'ast> GenerateKoopa<'ast> for LOrExp {
 
                 env.layout_mut(program).bbs_mut().extend([rhs_bb]);
                 env.set_cur_bb(rhs_bb);
-                let rhs = l_and_exp.generate_koopa(program, env)?;
+                let rhs = l_and_exp.generate_koopa(program, env)?.to_int()?;
                 let zero = env.new_value(program).integer(0);
                 let rhs_ne_zero = env.new_value(program).binary(BinaryOp::NotEq, rhs, zero);
                 env.new_inst(program).push_key_back(rhs_ne_zero).unwrap();
@@ -834,14 +847,14 @@ impl<'ast> GenerateKoopa<'ast> for LOrExp {
                 env.set_cur_bb(end_bb);
                 let load = env.new_value(program).load(alloc_res);
                 env.new_inst(program).push_key_back(load).unwrap();
-                Ok(load)
+                Ok(ExpType::Int(load))
             }
         }
     }
 }
 
 impl<'ast> GenerateKoopa<'ast> for ConstExp {
-    type Out = Value;
+    type Out = ExpType;
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         self.exp.generate_koopa(program, env)

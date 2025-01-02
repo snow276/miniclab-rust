@@ -1,5 +1,6 @@
 mod env;
 mod eval;
+mod exp_type;
 mod gen;
 mod symbol;
 
@@ -29,6 +30,7 @@ pub enum IrgenError {
     FunctionUndeclared,
     InitializeConstWithFunctionCall,
     ReturnWithExpressionInVoidFunction,
+    UsingVoidValue,
 }
 
 impl fmt::Display for IrgenError {
@@ -45,6 +47,7 @@ impl fmt::Display for IrgenError {
             Self::FunctionUndeclared => write!(f, "Function undeclared"),
             Self::InitializeConstWithFunctionCall => write!(f, "Initializing a const symbol with a function call"),
             Self::ReturnWithExpressionInVoidFunction => write!(f, "Returning with an expression in a void function"),
+            Self::UsingVoidValue => write!(f, "Using a void value"),
         }
     }
 }

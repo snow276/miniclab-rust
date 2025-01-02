@@ -14,6 +14,23 @@ impl<'ast> GenerateKoopa<'ast> for CompUnit {
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         env.push_scope();
+        let mut new_decl = |name: &'ast str , params_ty, ret_ty| {
+            let func = program.new_func(FunctionData::new_decl(
+                format!("@{}", name), 
+                params_ty, 
+                ret_ty
+            ));
+            env.new_func(name, func);
+        };
+        new_decl("getint", vec![], Type::get_i32());
+        new_decl("getch", vec![], Type::get_i32());
+        new_decl("getarray", vec![Type::get_pointer(Type::get_i32())], Type::get_i32());
+        new_decl("putint", vec![Type::get_i32()], Type::get_unit());
+        new_decl("putch", vec![Type::get_i32()], Type::get_unit());
+        new_decl("putarray", vec![Type::get_i32(), Type::get_pointer(Type::get_i32())], Type::get_unit());
+        new_decl("starttime", vec![], Type::get_unit());
+        new_decl("stoptime", vec![], Type::get_unit());
+
         for func_def in &self.func_def_list {
             func_def.generate_koopa(program, env)?;
         }

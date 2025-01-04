@@ -12,7 +12,12 @@ match {
 }
 
 pub CompUnit: CompUnit = {
-  <func_def_list: (FuncDef)*> => CompUnit { func_def_list: func_def_list }
+  <comp_unit_list: (SimpleCompUnit)*> => CompUnit { comp_unit_list: comp_unit_list }
+}
+
+pub SimpleCompUnit: SimpleCompUnit = {
+  <func_def: FuncDef> => SimpleCompUnit::FuncDef(<>),
+  <decl: Decl> => SimpleCompUnit::Decl(<>),
 }
 
 Decl: Decl = {
@@ -30,7 +35,10 @@ ConstDecl: ConstDecl = {
   }
 }
 
-BType: BType = "int" => BType::Int;
+BType: BType = {
+  "int" => BType::Int,
+  "void" => BType::Void,
+}
 
 ConstDef: ConstDef = {
   <ident: Ident> "=" <const_init_val: ConstInitVal> => ConstDef { b_type: BType::Int, ident: ident, const_init_val: Box::new(const_init_val)},
@@ -56,7 +64,7 @@ VarDef: VarDef = {
 InitVal: InitVal = <exp: Exp> => InitVal { exp: Box::new(exp) };
 
 FuncDef: FuncDef = {
-  <func_type: FuncType> <ident: Ident> "(" <func_f_params: FuncFParams?> ")" <block: Block> => {
+  <func_type: BType> <ident: Ident> "(" <func_f_params: FuncFParams?> ")" <block: Block> => {
     FuncDef { <> }
   }
 }
@@ -72,10 +80,10 @@ FuncFParam: FuncFParam = {
   <b_type: BType> <ident: Ident> => FuncFParam { <> }
 }
 
-FuncType: FuncType = {
-  "int" => FuncType::Int,
-  "void" => FuncType::Void,
-}
+// FuncType: FuncType = {
+//   "int" => FuncType::Int,
+//   "void" => FuncType::Void,
+// }
 
 Block: Block = "{" <block_item_list: (BlockItem)*> "}" => Block { <> };
 

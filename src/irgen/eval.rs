@@ -33,6 +33,12 @@ impl Evaluate for ConstExp {
     }
 }
 
+impl Evaluate for InitVal {
+    fn evaluate(&self, env: &IrgenEnv) -> Result<i32, IrgenError> {
+        self.exp.evaluate(env)
+    }
+}
+
 impl Evaluate for Exp {
     fn evaluate(&self, env: &IrgenEnv) -> Result<i32, IrgenError> {
         self.l_or_exp.evaluate(env)

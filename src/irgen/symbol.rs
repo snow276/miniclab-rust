@@ -5,7 +5,7 @@ use koopa::ir::{Function, Value};
 #[derive(Clone, Copy)]
 pub enum SymbolInfo {
     Const(i32),
-    Variable(Value), // This value should point to an "Alloc" in the IR.
+    Variable(Value), // This value should point to an "Alloc" or "GlobalAlloc" in the IR.
     Function(Function),
 }
 

@@ -1,6 +1,5 @@
 // EBNF:
-// CompUnit      ::= [CompUnit] FuncDef;
-
+// CompUnit      ::= [CompUnit] (Decl | FuncDef);
 // Decl          ::= ConstDecl | VarDecl;
 // ConstDecl     ::= "const" BType ConstDef {"," ConstDef} ";";
 // BType         ::= "int";
@@ -49,7 +48,13 @@
 
 #[derive(Debug)]
 pub struct CompUnit {
-    pub func_def_list: Vec<FuncDef>,
+    pub comp_unit_list: Vec<SimpleCompUnit>,
+}
+
+#[derive(Debug)]
+pub enum SimpleCompUnit {
+    Decl(Decl),
+    FuncDef(FuncDef),
 }
 
 #[derive(Debug)]
@@ -66,6 +71,7 @@ pub struct ConstDecl {
 #[derive(Debug, Clone, Copy)]
 pub enum BType {
     Int,
+    Void,
 }
 
 #[derive(Debug)]
@@ -99,7 +105,7 @@ pub struct InitVal {
 
 #[derive(Debug)]
 pub struct FuncDef {
-    pub func_type: FuncType,
+    pub func_type: BType,
     pub ident: String,
     pub func_f_params: Option<FuncFParams>,
     pub block: Block,
@@ -116,11 +122,11 @@ pub struct FuncFParam {
     pub ident: String,
 }
 
-#[derive(Debug)]
-pub enum FuncType {
-    Int,
-    Void,
-}
+// #[derive(Debug)]
+// pub enum FuncType {
+//     Int,
+//     Void,
+// }
 
 #[derive(Debug)]
 pub struct Block {

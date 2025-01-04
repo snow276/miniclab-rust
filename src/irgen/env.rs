@@ -6,6 +6,12 @@ use koopa::ir::{BasicBlock, Program, Type, Value};
 
 use super::symbol::{SymbolInfo, SymbolTable};
 
+#[derive(Debug, Clone, Copy)]
+pub enum DeclType {
+    Global,
+    Local,
+}
+
 pub struct IrgenEnv<'s> {
     cur_func: Option<Function>,
     cur_func_type: Option<Type>,
@@ -19,6 +25,7 @@ pub struct IrgenEnv<'s> {
     while_id: i32,
     cur_while_cond_bb: Option<BasicBlock>,
     cur_while_end_bb: Option<BasicBlock>,
+    cur_decl_type: Option<DeclType>,
 }
 
 impl<'s> IrgenEnv<'s> {
@@ -36,6 +43,7 @@ impl<'s> IrgenEnv<'s> {
             while_id: 0,
             cur_while_cond_bb: None,
             cur_while_end_bb: None,
+            cur_decl_type: None,
         }
     }
 
@@ -118,6 +126,21 @@ impl<'s> IrgenEnv<'s> {
         None
     }
 
+    pub fn containes_symbol_in_global_scope(&self, ident: &'s str) -> bool {
+        let global_sym_tab = self.sym_tab.first().unwrap();
+        global_sym_tab.contains_key(ident)
+    }
+
+    pub fn new_symbol_const_in_global_scope(&mut self, ident: &'s str, val: i32) {
+        let global_sym_tab = self.sym_tab.first_mut().unwrap();
+        global_sym_tab.set_value(ident, SymbolInfo::Const(val));
+    }
+
+    pub fn new_symbol_var_in_global_scope(&mut self, ident: &'s str, val: Value) {
+        let global_sym_tab = self.sym_tab.first_mut().unwrap();
+        global_sym_tab.set_value(ident, SymbolInfo::Variable(val));
+    }
+
     pub fn new_func(&mut self, ident: &'s str, func: Function) {
         let global_sym_tab = self.sym_tab.first_mut().unwrap();
         global_sym_tab.set_value(ident, SymbolInfo::Function(func));
@@ -186,5 +209,13 @@ impl<'s> IrgenEnv<'s> {
 
     pub fn get_cur_while_end_bb(&self) -> Option<BasicBlock> {
         self.cur_while_end_bb
+    }
+
+    pub fn set_cur_decl_type(&mut self, decl_type: Option<DeclType>) {
+        self.cur_decl_type = decl_type;
+    }
+
+    pub fn get_cur_decl_type(&self) -> Option<DeclType> {
+        self.cur_decl_type
     }
 }

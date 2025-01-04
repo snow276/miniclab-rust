@@ -1,6 +1,6 @@
-use super::{env::IrgenEnv, eval::Evaluate, exp_type::ExpType, symbol::SymbolInfo, IrgenError};
+use super::{env::{DeclType, IrgenEnv}, eval::Evaluate, exp_type::ExpType, symbol::SymbolInfo, IrgenError};
 use crate::ast::*;
-use koopa::ir::{builder::{BasicBlockBuilder, LocalInstBuilder, ValueBuilder}, BinaryOp, FunctionData, Program, Type, TypeKind};
+use koopa::ir::{builder::{BasicBlockBuilder, GlobalInstBuilder, LocalInstBuilder, ValueBuilder}, BinaryOp, FunctionData, Program, Type, TypeKind};
 use std::result::Result;
 
 pub trait GenerateKoopa<'ast> {
@@ -31,8 +31,17 @@ impl<'ast> GenerateKoopa<'ast> for CompUnit {
         new_decl("starttime", vec![], Type::get_unit());
         new_decl("stoptime", vec![], Type::get_unit());
 
-        for func_def in &self.func_def_list {
-            func_def.generate_koopa(program, env)?;
+        for comp_unit in &self.comp_unit_list {
+            match comp_unit {
+                SimpleCompUnit::Decl(decl) => {
+                    env.set_cur_decl_type(Some(DeclType::Global));
+                    decl.generate_koopa(program, env)?;
+                    env.set_cur_decl_type(None);
+                }
+                SimpleCompUnit::FuncDef(func_def) => {
+                    func_def.generate_koopa(program, env)?;
+                }
+            }
         }
         env.pop_scope();
         Ok(())
@@ -71,6 +80,7 @@ impl<'ast> GenerateKoopa<'ast> for BType {
     fn generate_koopa(&'ast self, _program: &mut Program, _env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         match self {
             Self::Int => Ok(Type::get_i32()),
+            Self::Void => Ok(Type::get_unit()),
         }
     }
 }
@@ -80,10 +90,21 @@ impl<'ast> GenerateKoopa<'ast> for ConstDef {
 
     fn generate_koopa(&'ast self, _program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
         let const_val = self.const_init_val.evaluate(env)?;
-        if env.contains_symbol_in_cur_scope(&self.ident) {
-            return Err(IrgenError::SymbolDeclaredMoreThanOnce);
+        let decl_type = env.get_cur_decl_type().unwrap();
+        match decl_type {
+            DeclType::Global => {
+                if env.containes_symbol_in_global_scope(&self.ident) {
+                    return Err(IrgenError::SymbolDeclaredMoreThanOnce);
+                }
+                env.new_symbol_const_in_global_scope(&self.ident, const_val);
+            },
+            DeclType::Local => {
+                if env.contains_symbol_in_cur_scope(&self.ident) {
+                    return Err(IrgenError::SymbolDeclaredMoreThanOnce);
+                }
+                env.new_symbol_const(&self.ident, const_val);
+            }
         }
-        env.new_symbol_const(&self.ident, const_val);
         Ok(())
     }   
 }
@@ -103,19 +124,41 @@ impl<'ast> GenerateKoopa<'ast> for VarDef {
     type Out = ();
 
     fn generate_koopa(&'ast self, program: &mut Program, env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
-        if env.contains_symbol_in_cur_scope(&self.ident) {
-            return Err(IrgenError::SymbolDeclaredMoreThanOnce);
-        }
-        let ty = self.b_type.generate_koopa(program, env)?;
-        let alloc = env.new_value(program).alloc(ty);
-        env.dfg_mut(program).set_value_name(alloc, Some(format!("@{}", self.ident)));
-        env.new_inst(program).push_key_back(alloc).unwrap(); 
-        env.new_symbol_var(&self.ident, alloc);   
+        let decl_type = env.get_cur_decl_type().unwrap();
+        match decl_type {
+            DeclType::Global => {
+                if env.containes_symbol_in_global_scope(&self.ident) {
+                    return Err(IrgenError::SymbolDeclaredMoreThanOnce);
+                }
+                let ty = self.b_type.generate_koopa(program, env)?;
+                let const_val = match self.init_val.as_ref() {
+                    Some(init_val) => {
+                        program.new_value().integer(init_val.evaluate(env)?)
+                    },
+                    None => {
+                        program.new_value().zero_init(ty)
+                    }
+                };
+                let global_alloc = program.new_value().global_alloc(const_val);
+                program.set_value_name(global_alloc, Some(format!("@{}", self.ident)));
+                env.new_symbol_var_in_global_scope(&self.ident, global_alloc);
+            },
+            DeclType::Local => {
+                if env.contains_symbol_in_cur_scope(&self.ident) {
+                    return Err(IrgenError::SymbolDeclaredMoreThanOnce);
+                }
+                let ty = self.b_type.generate_koopa(program, env)?;
+                let alloc = env.new_value(program).alloc(ty);
+                env.dfg_mut(program).set_value_name(alloc, Some(format!("@{}", self.ident)));
+                env.new_inst(program).push_key_back(alloc).unwrap();
+                env.new_symbol_var(&self.ident, alloc);
 
-        if let Some(init_val) = self.init_val.as_ref() {
-            let val = init_val.generate_koopa(program, env)?.to_int()?;
-            let store = env.new_value(program).store(val, alloc);
-            env.new_inst(program).push_key_back(store).unwrap();
+                if let Some(init_val) = self.init_val.as_ref() {
+                    let val = init_val.generate_koopa(program, env)?.to_int()?;
+                    let store = env.new_value(program).store(val, alloc);
+                    env.new_inst(program).push_key_back(store).unwrap();
+                }
+            }
         }
         Ok(())
     }
@@ -216,16 +259,16 @@ impl<'ast> GenerateKoopa<'ast> for FuncDef {
     }
 }
 
-impl<'ast> GenerateKoopa<'ast> for FuncType {
-    type Out = Type;
+// impl<'ast> GenerateKoopa<'ast> for FuncType {
+//     type Out = Type;
 
-    fn generate_koopa(&'ast self, _program: &mut Program, _env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
-        match self {
-            Self::Int => Ok(Type::get_i32()),
-            Self::Void => Ok(Type::get_unit()),
-        }
-    }
-}
+//     fn generate_koopa(&'ast self, _program: &mut Program, _env: &mut IrgenEnv<'ast>) -> Result<Self::Out, IrgenError> {
+//         match self {
+//             Self::Int => Ok(Type::get_i32()),
+//             Self::Void => Ok(Type::get_unit()),
+//         }
+//     }
+// }
 
 impl<'ast> GenerateKoopa<'ast> for Block {
     type Out = ();
@@ -250,7 +293,10 @@ impl<'ast> GenerateKoopa<'ast> for BlockItem {
                 stmt.generate_koopa(program, env)
             },
             Self::Decl(decl) => {
-                decl.generate_koopa(program, env)
+                env.set_cur_decl_type(Some(DeclType::Local));
+                let val = decl.generate_koopa(program, env)?;
+                env.set_cur_decl_type(None);
+                Ok(val)
             },
         }
     }

@@ -692,3 +692,298 @@ Lv6 的后端相比之前的后端多出来的只有  `jump` 和 `br` 两类 IR 
 ### 其他
 
 用作者的方法生成出来的 `while` 的 IR 表示和 Lv7.2 lab 文档中助教写的并不太一样，但作者实在没想出来助教那样的写法是怎么弄出来的，不管了。
+
+## Lv8.1 函数和全局变量 Frontend
+
+Lv8 的内容非常多，拆成一个个小章节一点点来吧。
+
+Lv8.1 需要实现函数的定义和调用。
+
+### 功能梳理
+
+#### 1. 语法/词法分析
+
+按照要求修改 `sysy.lalrpop` 和 `ast.rs` 就行，这部分不麻烦。
+
+修改以后，原来的 `CompUnit` 被替换为了 `SimpleCompUnit` 这个结构（存放单个函数or全局定义），而 `CompUnit` 则存放了 `SimpleCompUnit` 的列表。
+
+#### 2. 符号表和作用域
+
+首先，根据文档的建议，作者把全局范围内所有的函数 (包括之后章节中会出现的全局变量) 都放在同一个作用域内，即全局作用域，并让这个全局作用域位于所有局部作用域的外层。具体而言，在 `CompUnit` 中创建一个全局作用域，然后在处理每个 `FuncDef` 的时候在创建每个函数自己的作用域即可。
+
+然后，需要确认是否应该把函数符号和变量/常量符号统一存在一张符号表里。在做这个选择的时候，作者考虑到了以下几点：
+
+1. SysY 是允许函数内的局部变量名和函数名相同的。比如以下的程序是合法的：
+
+   ```plaintext
+   int f() {
+       return;
+   }
+
+   int main() {
+       int f = 1;
+       f();
+       return 0;
+   }
+   ```
+2. SysY 要求 `CompUnit` 的顶层变量/常量声明语句（对应 `Decl` ），函数定义（对应 `FuncDef` ）都不可以重复定义同名标识符（ `IDENT` ），即使标识符的类型不同也不允许。
+3. SysY 程序不存在“在函数中定义函数”的情况，所以所有的函数符号一定是在全局作用域中。
+4. 局部变量会覆盖同名全局变量。
+
+考虑到这几点，作者暂时选择了把函数符号和变量/常量统一存在一张符号表中。这样的话，函数符号必然是只存在于全局作用域的符号表的。不过这样的话，需要在处理函数调用的时候特别注意一下，在检索函数符号的时候只从全局作用域中搜索（否则可能查到局部符号，导致出错）。
+
+还有一些别的要解决的小问题，解决方案列在下面：
+
+在符号表中用什么代表函数？作者使用了 Koopa IR 中的 `Function` 指针，通过这个 `Function` 指针可以获得 `FunctionData` ，里面含有所有关于这个函数需要的信息。
+
+是否要在符号表中存函数的形参列表？不需要，因为可以通过 `Function` 指针获取 `FunctionData` ，而其中已经存了函数的形参信息。
+
+所以，修改后的符号表长这样：
+
+```rust
+pub enum SymbolInfo {
+    Const(i32),
+    Variable(Value), // This value should point to an "Alloc" in the IR.
+    Function(Function),
+}
+```
+
+在插入和查询函数时，都直接从全局作用域的符号表中查询。
+
+#### 3. 处理函数调用指令
+
+在处理 `UnaryExp::FuncCall` 时生成 `call` 指令并将其加入指令列表中。
+
+创建 `call` 这一 Koopa IR 值时，需要使用的参数是表示被调用函数的 `Function` 和表示实参列表的 `Vec<Value>` ，前者可以从符号表中查出来，后者队实参列表依次求值即可。
+
+#### 4. 处理函数参数
+
+这里主要讨论的是，在 `FuncDef` 中怎么处理函数的形参，以及怎么体现”把函数的实参存入对应的形参中“这个过程。
+
+以下面这段 SysY 程序为例（其中调用了有两个参数的函数 `add()` ）。
+
+```plaintext
+int add(int a, int b) {
+  return a + b;
+}
+
+int main() {
+  return add(1, 2);
+}
+```
+
+要想知道怎么处理函数的参数，需要理解 Koopa IR 中是怎么处理函数的。
+
+在 Koopa IR 中，在使用 `program.new_func()` 创建函数时，需要传入的信息包括：1）函数在 IR 表示中的名字 2）函数的形参列表（用一个 `params_ty: Vec<Type>` 表示，毕竟形参列表其实就是一个类型列表，里面按顺序存放了各个形参的类型） 3）返回类型（用一个 `ret_ty: Type` 表示）。作者在 `FuncDef::generator_koopa` 中，用类似下面的代码在 Koopa IR 中创建函数：
+
+```rust
+        let mut params_ty = vec![];
+        if let Some(func_f_params) = self.func_f_params.as_ref() {
+            for func_f_param in &func_f_params.func_f_param_list {
+                let ty = func_f_param.b_type.generate_koopa(program, env)?;
+                params_ty.push(ty);
+            }
+        }
+        let ret_ty = self.func_type.generate_koopa(program, env)?;
+        let func = program.new_func(FunctionData::new(
+            format!("@{}", self.ident), 
+            params_ty.clone(), 
+            ret_ty.clone()
+        ));
+```
+
+在创建了 Koopa IR 内存形式的函数之后，Koopa IR 会自动为这个函数创建若干个 `Value` ，存储 `FunctionData` 的 `params: &[Value]` 字段中，分别用来存放函数的实参，函数调用时，函数的实参就会被存在这些用来 `Value` 中。作者这里的处理方式时：在函数的开头，就为每个形参都分配一块内存空间，并且把实参的值存到相应的为形参分配的空间中，这就完成了传参的过程。之后在函数体中，正常地使用这些为形参分配的空间即可。相关的代码和如下：
+
+```rust
+        if let Some(func_f_params) = self.func_f_params.as_ref() {
+            let params = program.func(func).params().to_vec();
+            for ((func_f_param, param_ty), param) in func_f_params.func_f_param_list.iter().zip(params_ty.iter()).zip(params.iter()) {
+                let alloc_param = env.new_value(program).alloc(param_ty.clone());
+                env.dfg_mut(program).set_value_name(alloc_param, Some(format!("@{}", func_f_param.ident)));
+                env.new_inst(program).push_key_back(alloc_param).unwrap();
+                env.new_symbol_var(&func_f_param.ident, alloc_param);
+                let store_param = env.new_value(program).store(*param, alloc_param);
+                env.new_inst(program).push_key_back(store_param).unwrap();
+            }
+        }
+```
+
+最终，上面的 SysY 程序翻译出的 IR 形式结果类似如下。
+
+```plaintext
+fun @add(%0: i32, %1: i32): i32 {
+%entry:
+  %ret = alloc i32
+  @a = alloc i32
+  store %0, @a
+  @b = alloc i32
+  store %1, @b
+  %2 = load @a
+  %3 = load @b
+  %4 = add %2, %3
+  store %4, %ret
+  jump %exit
+
+%exit:
+  %5 = load %ret
+  ret %5
+}
+
+fun @main(): i32 {
+%entry:
+  %ret = alloc i32
+  %6 = call @add(1, 2)
+  store %6, %ret
+  jump %exit
+
+%exit:
+  %7 = load %ret
+  ret %7
+}
+
+```
+
+#### 5. 函数返回值类型对函数的调用指令和返回指令的影响
+
+首先看返回值类型对返回指令的影响。
+
+函数有 `int` 和 `void` 两种，其中 `void` 是本节新增的，其相比 `int` 返回值的特殊之处在于：返回值类型为 `void` 的函数，在结束时的 `ret` 中不需要任何的参数。
+
+在之前处理 `int` 返回值的函数时，作者是先在函数中创建一个 `%ret` 变量符号，然后再遇到 `Return` 指令时把返回值给 `store` 进 `%ret` 中，最后再无脑补一句 `ret %ret` 。然而，这套操作对于 `void` 返回值的函数是行不通的。
+
+解决方案也很简单。作者在全局环境中新增了一个成员变量 `cur_func_type: Option<Type>` ，用于表示当前函数的返回值类型。如果是 `void` 类型的函数，一开始就不用在函数的符号表中创建 `%ret` 符号，之后在每次需要生成 `ret` 语句时也不用加上任何参数。比如，修改后创建 `ret` 语句的代码大概就长这样：
+
+```rust
+        match env.get_cur_func_type().unwrap().kind() {
+            TypeKind::Int32 => {
+                let alloc_ret = match env.get_symbol("%ret").unwrap() {
+                    SymbolInfo::Variable(alloc) => *alloc,
+                    _ => unreachable!()
+                };
+                let load = env.new_value(program).load(alloc_ret);
+                let ret = env.new_value(program).ret(Some(load));
+                env.new_inst(program).push_key_back(load).unwrap();
+                env.new_inst(program).push_key_back(ret).unwrap();
+            },
+            TypeKind::Unit => {
+                let ret = env.new_value(program).ret(None);
+                env.new_inst(program).push_key_back(ret).unwrap();
+            },
+            _ => unreachable!()
+        }
+```
+
+另一个需要注意的就是，SysY 中规定了“试图使用返回类型为 `void` 的函数的返回值是未定义行为”。所以，如果想要优雅地让编译器报出这个未定义行为，就不能再让 `generate_koopa` 中函数调用的返回值一定是 `Value` 了（因为函数调用的返回值可能啥都不是）。为此，可以参考 `kira-rs` 中的设计，抽象出一个 `ExpValue` 的 `Enum` 类，用于存放各种可能的表达式的值。
+
+```rust
+pub enum ExpType {
+    Int(Value),
+    Void,
+}
+```
+
+把这个作为表达式相关的词法成分的 `generate_koopa` 的返回值类型，就可以在生成 IR 过程中报出使用类型为 `void` 的函数的返回值这个 UB 啦。
+
+## Lv8.2 SysY 库函数 Frontend
+
+Lv8.2 需要支持调用 SysY 库函数。
+
+很好写，只需要在 `CompUnit` 中新增这些库函数的声明，并把库函数加入到全局作用域的符号表中就可以了。唯一需要动动脑子的就是去找 Koopa IR 中怎么创建一个函数声明。
+
+在 `CompUnit::generate_koopa()` 中新增的代码大概长这样：
+
+```rust
+        let mut new_decl = |name: &'ast str , params_ty, ret_ty| {
+            let func = program.new_func(FunctionData::new_decl(
+                format!("@{}", name), 
+                params_ty, 
+                ret_ty
+            ));
+            env.new_func(name, func);
+        };
+        new_decl("getint", vec![], Type::get_i32());
+        new_decl("getch", vec![], Type::get_i32());
+        new_decl("getarray", vec![Type::get_pointer(Type::get_i32())], Type::get_i32());
+        new_decl("putint", vec![Type::get_i32()], Type::get_unit());
+        new_decl("putch", vec![Type::get_i32()], Type::get_unit());
+        new_decl("putarray", vec![Type::get_i32(), Type::get_pointer(Type::get_i32())], Type::get_unit());
+        new_decl("starttime", vec![], Type::get_unit());
+        new_decl("stoptime", vec![], Type::get_unit());
+```
+
+## Lv8.3 全局变量和常量 Frontend
+
+Lv8.3 需要支持全局的变量和常量。
+
+### 功能梳理
+
+#### 1. 语法/词法分析
+
+本来以为按照本节新增的更改语法/词法分析的部分就行，结果没想到写完之后一运行出现了这个错误，具体来说是发生了归约-归约冲突：
+
+```plaintext
+    The problem arises after having observed the following symbols in the input:
+      "int"
+    At that point, if the next token is a `r#"[_a-zA-Z][_a-zA-Z0-9]*"#`, then the parser can
+    proceed in two different ways.
+
+    First, the parser could execute the production at
+    /home/rocky/miniclab/sysy_compiler/src/sysy.lalrpop:38:16: 38:34, which would consume
+    the top 1 token(s) from the stack and produce a `BType`. This might then yield a parse
+    tree like
+      "int"   ╷ VarDef ";"
+      ├─BType─┘          │
+      └─VarDecl──────────┘
+
+    Alternatively, the parser could execute the production at
+    /home/rocky/miniclab/sysy_compiler/src/sysy.lalrpop:81:3: 81:24, which would consume the
+    top 1 token(s) from the stack and produce a `FuncType`. This might then yield a parse
+    tree like
+      "int"      ╷ Ident "(" ")" Block
+      ├─FuncType─┘                   │
+      └─FuncDef──────────────────────┘
+
+    See the LALRPOP manual for advice on making your grammar LR(1).
+```
+
+为了解决这个冲突，我把 `FuncType` 这个类型直接删掉了，所有类型一律都用 `BType` 表示。
+
+#### 2. 符号表
+
+本节对符号表没有什么需要修改的地方（因为之前的设计已经够好了x）。
+
+全局变量和全局常量都被存放在全局作用域的符号表中，其中全局变量关联到 `Value` （并且一定是 `GlobalAlloc` 类型的），全局常量关联到整数，都可以直接使用之前设计的数据结构。
+
+#### 3. 生成全局内存分配指令
+
+需要注意到，处理全局变量和常量与处理局部变量和常量存在以下的几个区别：
+
+1. 全局变量对应的 `Value` 需要用  `program.new_value().global_alloc()` 这一套接口来在 Koopa IR 中生成
+2. 在 SysY 中，全局变量也只能用常量初始化（这点与 C/C++ 是不一样的）。为此，需要为 `InitVal` 类型也实现 `Evaluate` 这个 Trait，并且在初始化全局变量的时候直接借此进行编译期间求值
+
+注意到，生成全局/局部的变量/常量的语句都对应到 AST 中的 `Decl` 这一类型，所以要解决的问题就是，在生成 `Decl` 对应的 Koopa IR 时，怎么指定当前正在声明的东西是全局的还是局部的？需要根据这一信息来决定生成代码的方法。
+
+作者觉得这个问题有两种解决方案：
+
+1. 在 AST 中定义一个新的类型 `GlobalDecl` （并且定义 `GlobalConstDef` 、`GloablVarDef` 等配套的类型），让全局的声明全部关联到这些类型上
+2. 在全局环境中新增一个变量，用于指示当前是否处在声明全局/局部符号的过程中
+
+前一种实现方案会导致新增很多重复代码，所以作者选择了第二种方案。
+
+具体而言，作者在 `IrgenEnv` 中新增了一个成员变量 `cur_decl_type: Option<DeclType>` ，其中 `DeclType` 这一类型的定义如下：
+
+```rust
+#[derive(Debug, Clone, Copy)]
+pub enum DeclType {
+    Global,
+    Local,
+}
+```
+
+如果正在处于声明全局符号的过程，就把 `cur_decl_type` 设置为 `Some(Global)` ；如果正在处于声明局部变量的过程，就把 `cur_decl_type` 设置为 `Some(Local)` ；其余情况均将其设置为 `None` 。
+
+然后，在生成 `ConstDef` 和 `VarDef` 中，根据当前 `cur_decl_type` 的值，判断应该生成声明全局符号的 IR 还是生成声明局部符号的 IR 。
+
+具体而言，对于 `ConstDef` 来说，如果当前 `cur_decl_type` 为 `Some(Global)` ，就把符号插入到全局的符号表中；如果为 `Some(Local)` ，就和之前一样插入到当前作用域的符号表中。对于 `VarDef` 来说，如果当前 `cur_decl_type` 为 `Some(Global)` ，就在编译器计算出初始值，使用 `global_alloc()` 接口生成对应的 IR，并把符号加入到全局的符号表中；如果是 `Some(Local)` ，那么就还是和之前的做法一样。
+
+至此，Lv8 的前端就全部通过啦！
